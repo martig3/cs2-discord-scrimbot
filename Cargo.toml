@@ -1,0 +1,11 @@
+[package]
+name = "rust-dathost-scrimbot"
+version = "0.1.0"
+authors = ["MartinWienc <32913968+MartinWienc@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+tokio = { version = "0.2.0", features = ["full"] }
+[dependencies.serenity]
+version = "0.9.0-rc.0"
