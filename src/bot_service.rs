@@ -4,7 +4,7 @@ use serenity::model::channel::Message;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{UserQueue, Config};
+use crate::{Config, UserQueue};
 
 pub(crate) async fn handle_join(context: Context, msg: Message) {
     let mut data = context.data.write().await;
@@ -90,7 +90,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
-        // return;
+        return;
     }
     let response = MessageBuilder::new()
         .mention(&msg.author)
@@ -111,6 +111,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let resp = client
         .put(&chg_password_url)
         .form(&[("csgo_settings.password", &server_pass)])
+        .basic_auth(&dathost_username, dathost_password.as_ref())
         .send()
         .await
         .unwrap();
