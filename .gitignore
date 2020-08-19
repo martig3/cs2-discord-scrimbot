@@ -1,3 +1,4 @@
 /target
 .idea
 rust-dathost-scrimbot.iml
+*.yaml
