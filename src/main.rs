@@ -40,6 +40,7 @@ enum Command {
     LEAVE,
     LIST,
     START,
+    STEAMID,
     UNKNOWN,
 }
 
@@ -47,12 +48,24 @@ struct Handler;
 
 struct UserQueue;
 
+struct SteamIdCache;
+
+#[derive(Serialize, Deserialize)]
+struct SteamIds {
+    discord_id: u64,
+    steam_id: String,
+}
+
 impl TypeMapKey for UserQueue {
     type Value = Vec<User>;
 }
 
 impl TypeMapKey for Config {
     type Value = Config;
+}
+
+impl TypeMapKey for SteamIdCache {
+    type Value = Vec<SteamIds>;
 }
 
 impl FromStr for Command {
@@ -63,6 +76,7 @@ impl FromStr for Command {
             "!join" => Ok(Command::JOIN),
             "!leave" => Ok(Command::LEAVE),
             "!list" => Ok(Command::LIST),
+            "!steamid" => Ok(Command::LIST),
             "!start" => Ok(Command::START),
             _ => Err(()),
         }
@@ -80,6 +94,7 @@ impl EventHandler for Handler {
             Command::LEAVE => bot_service::handle_leave(context, msg).await,
             Command::LIST => bot_service::handle_list(context, msg).await,
             Command::START => bot_service::handle_start(context, msg).await,
+            Command::STEAMID => bot_service::hand_add_steam_id(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }
@@ -91,7 +106,7 @@ impl EventHandler for Handler {
 #[tokio::main]
 async fn main() -> () {
     let config = read_config().await.unwrap();
-    let token = config.discord.token.to_string();
+    let token = &config.discord.token;
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("~"));
     let mut client = Client::new(&token)
@@ -103,6 +118,7 @@ async fn main() -> () {
         let mut data = client.data.write().await;
         data.insert::<UserQueue>(Vec::new());
         data.insert::<Config>(config);
+        data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
     }
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
@@ -113,4 +129,16 @@ async fn read_config() -> Result<Config, serde_yaml::Error> {
     let yaml = std::fs::read_to_string("config.yaml").unwrap();
     let config: Config = serde_yaml::from_str(&yaml)?;
     Ok(config)
+}
+
+async fn read_steam_ids() -> Result<Vec<SteamIds>, serde_json::Error> {
+    if std::fs::read("steam-ids.json").is_ok() {
+        let json_str = std::fs::read_to_string("steam-ids.json").unwrap();
+        let json = serde_json::from_str(&json_str).unwrap();
+        Ok(json)
+    } else {
+        std::fs::write("steam-ids.json", serde_json::to_string(&Vec::new()))
+            .expect("Error writing init steam-ids.json file");
+        Ok(Vec::new())
+    }
 }

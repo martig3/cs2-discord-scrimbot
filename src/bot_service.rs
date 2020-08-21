@@ -1,14 +1,28 @@
-use rand::{Rng, thread_rng};
 use serenity::client::Context;
 use serenity::model::channel::Message;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{Config, UserQueue};
+use crate::{Config, SteamIdCache, SteamIds, UserQueue};
 
 pub(crate) async fn handle_join(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+    {
+        let steam_id_cache: &Vec<SteamIds> = &data.get::<SteamIdCache>().unwrap();
+        if !steam_id_cache.iter().map(|x| x.discord_id).any(|s| s.eq(msg.author.id.as_u64())) {
+            let response = MessageBuilder::new()
+                .mention(&msg.author)
+                .push(" steamID not found for your discord user, \
+            please use `!steamid \"your steamID\"` to assign one. \
+            https://steamid.io/ is an easy way to find your steamID for your account")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
+            return;
+        }
+    }
+    let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
     if user_queue.contains(&msg.author) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
@@ -60,12 +74,12 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
 pub(crate) async fn handle_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    let mut user_name = "".to_string();
-    for user in user_queue.to_vec() {
+    let mut user_name = String::from("");
+    for user in user_queue {
         user_name.push_str("\n- @");
         user_name.push_str(&user.name);
     }
-    let queue_len = user_queue.len().to_string();
+    let queue_len = &user_queue.len();
     let response = MessageBuilder::new()
         .push("Current queue size: ")
         .push(queue_len)
@@ -101,51 +115,23 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     }
 
     let client = reqwest::Client::new();
-    let dathost_username = config.dathost.username.to_string();
-    let dathost_password: Option<String> = Some(config.dathost.password.to_string());
-    let server_id = config.server.id.to_string();
-    let mut chg_password_url = "https://dathost.net/api/0.1/game-servers/"
-        .to_string();
-    chg_password_url.push_str(&server_id);
-    let server_pass = &thread_rng().gen::<u32>().to_string();
+    let dathost_username = &config.dathost.username;
+    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+    let server_id = &config.server.id;
+    let start_match_url = String::from("https://dathost.net/api/0.1/matches");
+
     let resp = client
-        .put(&chg_password_url)
-        .form(&[("csgo_settings.password", &server_pass)])
-        .basic_auth(&dathost_username, dathost_password.as_ref())
+        .put(&start_match_url)
+        .form(&[("game_server_id", &server_id)])
+        .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
         .unwrap();
-    println!("Change password response - {:#?}", resp.status());
-    let mut stop_server_url = "https://dathost.net/api/0.1/game-servers/"
-        .to_string();
-    stop_server_url.push_str(&server_id);
-    stop_server_url.push_str("/stop");
-    let resp = client
-        .post(&stop_server_url)
-        .body("".to_string())
-        .basic_auth(&dathost_username, dathost_password.as_ref())
-        .send()
-        .await
-        .unwrap();
-    println!("Stop server response - {:#?}", resp.status());
-    let mut start_server_url = "https://dathost.net/api/0.1/game-servers/"
-        .to_string();
-    start_server_url.push_str(&server_id);
-    start_server_url.push_str("/start");
-    let resp = client
-        .post(&start_server_url)
-        .body("".to_string())
-        .basic_auth(&dathost_username, dathost_password.as_ref())
-        .send()
-        .await
-        .unwrap();
-    println!("Start server response - {:#?}", resp.status());
-    let response = MessageBuilder::new()
-        .push("Server has completed startup. Check your DMs for server connection info.")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
+    println!("Start match response - {:#?}", resp);
+}
+
+pub(crate) async fn handle_add_steam_id(context: Context, msg: Message) {
+
 }
 
 pub(crate) async fn handle_unknown(context: Context, msg: Message) {
