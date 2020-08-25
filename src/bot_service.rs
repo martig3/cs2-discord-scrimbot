@@ -1,20 +1,23 @@
+use std::collections::HashMap;
+
+use serenity::CacheAndHttp;
 use serenity::client::Context;
-use serenity::model::channel::Message;
+use serenity::model::channel::{Message, ReactionType};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{Config, SteamIdCache, SteamIds, UserQueue};
+use crate::{BotState, Config, Maps, State, StateContainer, SteamIdCache, UserQueue};
 
 pub(crate) async fn handle_join(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     {
-        let steam_id_cache: &Vec<SteamIds> = &data.get::<SteamIdCache>().unwrap();
-        if !steam_id_cache.iter().map(|x| x.discord_id).any(|s| s.eq(msg.author.id.as_u64())) {
+        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+        if !steam_id_cache.contains_key(msg.author.id.as_u64()) {
             let response = MessageBuilder::new()
                 .mention(&msg.author)
                 .push(" steamID not found for your discord user, \
-            please use `!steamid \"your steamID\"` to assign one. \
-            https://steamid.io/ is an easy way to find your steamID for your account")
+                    please use `!steamid <your steamID>` to assign one. Example: `!steamid STEAM_0:1:12345678` ")
+                .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
                 .build();
             if let Err(why) = msg.channel_id.say(&context.http, &response).await {
                 println!("Error sending message: {:?}", why);
@@ -93,19 +96,114 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_start(context: Context, msg: Message) {
-    let data = context.data.write().await;
+    let mut data = context.data.write().await;
     let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    let config: &Config = data.get::<Config>().unwrap();
     if !user_queue.contains(&msg.author) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
-            .push(" is not in the queue or does not have the correct privileged role")
+            .push(" is not in the queue or does not have the correct role")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
         return;
     }
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::MapPick;
+    let maps: &Vec<String> = data.get::<Maps>().unwrap();
+    let emoji_map = populate_unicode_emojis().await;
+    let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
+    let emoji_suffixes = a_to_z[..maps.len()].to_vec();
+    let emojis: Vec<String> = emoji_suffixes
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!(":regional_indicator_{}: {}\n", c, &maps[i]))
+        .collect();
+    let vote_text: String = emojis
+        .iter()
+        .map(|s| String::from(s))
+        .collect();
+    let response = MessageBuilder::new()
+        .push_bold_line("Map Vote:")
+        .push(vote_text)
+        .build();
+    let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
+    for c in emoji_suffixes {
+        vote_msg.react(&context.http, ReactionType::Unicode(String::from(emoji_map.get(&c).unwrap()))).await.unwrap();
+    }
+}
+
+pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
+    let steam_id_str: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    steam_id_cache.insert(*msg.author.id.as_u64(), String::from(&steam_id_str));
+    write_to_file(String::from("steam-ids.json"), serde_json::to_string(steam_id_cache).unwrap()).await;
+    let response = MessageBuilder::new()
+        .push("Updated steamID for ")
+        .mention(&msg.author)
+        .push(" to `")
+        .push(&steam_id_str)
+        .push("`")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_add_map(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
+    let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    maps.push(String::from(&map_name));
+    write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
+    let response = MessageBuilder::new()
+        .mention(&msg.author)
+        .push(" added map: `")
+        .push(&map_name)
+        .push("`")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
+    let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    let index = maps.iter().position(|m| m == &map_name).unwrap();
+    maps.remove(index);
+    write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
+    let response = MessageBuilder::new()
+        .mention(&msg.author)
+        .push(" removed map: `")
+        .push(&map_name)
+        .push("`")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_unknown(context: Context, msg: Message) {
+    let response = MessageBuilder::new()
+        .push("Unknown command, type `!help` for list of commands.")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn write_to_file(path: String, content: String) {
+    let mut error_string = String::from("Error writing to ");
+    error_string.push_str(&path);
+    std::fs::write(path, content)
+        .expect(&error_string);
+}
+
+pub(crate) async fn launch_server(context: &Context, msg: Message) {
+    let data = context.data.write().await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" server is starting...")
@@ -114,6 +212,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         println!("Error sending message: {:?}", why);
     }
 
+    let config: &Config = data.get::<Config>().unwrap();
     let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
@@ -130,15 +229,9 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     println!("Start match response - {:#?}", resp);
 }
 
-pub(crate) async fn handle_add_steam_id(context: Context, msg: Message) {
-
-}
-
-pub(crate) async fn handle_unknown(context: Context, msg: Message) {
-    let response = MessageBuilder::new()
-        .push("Unknown command, type `!help` for list of commands.")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
+pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
+    let mut map = HashMap::new();
+    map.insert('a', String::from("🇦"));
+    map.insert('b', String::from("🇧"));
+    return map;
 }

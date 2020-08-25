@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -35,13 +36,15 @@ struct DiscordConfig {
     token: String,
 }
 
-enum Command {
-    JOIN,
-    LEAVE,
-    LIST,
-    START,
-    STEAMID,
-    UNKNOWN,
+struct StateContainer {
+    state: State,
+}
+
+enum State {
+    Queue,
+    MapPick,
+    Draft,
+    Live,
 }
 
 struct Handler;
@@ -50,11 +53,9 @@ struct UserQueue;
 
 struct SteamIdCache;
 
-#[derive(Serialize, Deserialize)]
-struct SteamIds {
-    discord_id: u64,
-    steam_id: String,
-}
+struct BotState;
+
+struct Maps;
 
 impl TypeMapKey for UserQueue {
     type Value = Vec<User>;
@@ -65,9 +66,27 @@ impl TypeMapKey for Config {
 }
 
 impl TypeMapKey for SteamIdCache {
-    type Value = Vec<SteamIds>;
+    type Value = HashMap<u64, String>;
 }
 
+impl TypeMapKey for BotState {
+    type Value = StateContainer;
+}
+
+impl TypeMapKey for Maps {
+    type Value = Vec<String>;
+}
+
+enum Command {
+    JOIN,
+    LEAVE,
+    LIST,
+    START,
+    STEAMID,
+    ADDMAP,
+    REMOVEMAP,
+    UNKNOWN,
+}
 impl FromStr for Command {
     type Err = ();
 
@@ -76,8 +95,10 @@ impl FromStr for Command {
             "!join" => Ok(Command::JOIN),
             "!leave" => Ok(Command::LEAVE),
             "!list" => Ok(Command::LIST),
-            "!steamid" => Ok(Command::LIST),
             "!start" => Ok(Command::START),
+            "!steamid" => Ok(Command::STEAMID),
+            "!addmap" => Ok(Command::ADDMAP),
+            "!removemap" => Ok(Command::REMOVEMAP),
             _ => Err(()),
         }
     }
@@ -88,13 +109,20 @@ impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
         if !msg.content.starts_with("!") { return; }
-        let command = Command::from_str(&msg.content).unwrap_or(Command::UNKNOWN);
+        let command = Command::from_str(&msg.content
+            .trim()
+            .split(" ")
+            .take(1)
+            .collect::<Vec<_>>()[0])
+            .unwrap_or(Command::UNKNOWN);
         match command {
             Command::JOIN => bot_service::handle_join(context, msg).await,
             Command::LEAVE => bot_service::handle_leave(context, msg).await,
             Command::LIST => bot_service::handle_list(context, msg).await,
             Command::START => bot_service::handle_start(context, msg).await,
-            Command::STEAMID => bot_service::hand_add_steam_id(context, msg).await,
+            Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
+            Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
+            Command::REMOVEMAP => bot_service::handle_remove_map(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }
@@ -119,6 +147,8 @@ async fn main() -> () {
         data.insert::<UserQueue>(Vec::new());
         data.insert::<Config>(config);
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
+        data.insert::<BotState>(StateContainer { state: State::Queue });
+        data.insert::<Maps>(read_maps().await.unwrap());
     }
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
@@ -131,14 +161,22 @@ async fn read_config() -> Result<Config, serde_yaml::Error> {
     Ok(config)
 }
 
-async fn read_steam_ids() -> Result<Vec<SteamIds>, serde_json::Error> {
+async fn read_steam_ids() -> Result<HashMap<u64, String>, serde_json::Error> {
     if std::fs::read("steam-ids.json").is_ok() {
         let json_str = std::fs::read_to_string("steam-ids.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
-        std::fs::write("steam-ids.json", serde_json::to_string(&Vec::new()))
-            .expect("Error writing init steam-ids.json file");
+        Ok(HashMap::new())
+    }
+}
+
+async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
+    if std::fs::read("maps.json").is_ok() {
+        let json_str = std::fs::read_to_string("maps.json").unwrap();
+        let json = serde_json::from_str(&json_str).unwrap();
+        Ok(json)
+    } else {
         Ok(Vec::new())
     }
 }
