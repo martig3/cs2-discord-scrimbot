@@ -261,6 +261,8 @@ pub(crate) async fn launch_server(context: &Context, msg: Message) {
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
     // I hate this implementation and I deserve to be scolded
+    // in my defense however, you have to provide unicode emojis to the api
+    // if Discord allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
     let mut map = HashMap::new();
     map.insert('a', String::from("🇦"));
     map.insert('b', String::from("🇧"));
