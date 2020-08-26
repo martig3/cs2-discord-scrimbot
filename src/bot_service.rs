@@ -117,7 +117,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let emojis: Vec<String> = emoji_suffixes
         .iter()
         .enumerate()
-        .map(|(i, c)| format!(":regional_indicator_{}: {}\n", c, &maps[i]))
+        .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
         .collect();
     let vote_text: String = emojis
         .iter()
@@ -154,7 +154,27 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
+    if maps.len() == 26 {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" unable to add map, max amount reached.")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
     let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    if maps.contains(&map_name) {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" unable to add map, already exists.")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
     maps.push(String::from(&map_name));
     write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
     let response = MessageBuilder::new()
@@ -172,6 +192,16 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    if !maps.contains(&map_name) {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" unable to remove map, doesn't exist in list.")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
     let index = maps.iter().position(|m| m == &map_name).unwrap();
     maps.remove(index);
     write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
