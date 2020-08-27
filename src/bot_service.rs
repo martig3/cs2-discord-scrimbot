@@ -1,12 +1,20 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
-use serenity::CacheAndHttp;
+use async_std::task;
+use rand::Rng;
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
 use crate::{BotState, Config, Maps, State, StateContainer, SteamIdCache, UserQueue};
+
+struct ReactionResult {
+    reaction_type: ReactionType,
+    count: u64,
+    map: String,
+}
 
 pub(crate) async fn handle_join(context: Context, msg: Message) {
     let mut data = context.data.write().await;
@@ -111,17 +119,17 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
     bot_state.state = State::MapPick;
     let maps: &Vec<String> = data.get::<Maps>().unwrap();
-    let emoji_map = populate_unicode_emojis().await;
+    let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
     let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
+    let unicode_emoji_map = populate_unicode_emojis().await;
+    for (i, map) in maps.iter().enumerate() {
+        unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
+    }
     let emoji_suffixes = a_to_z[..maps.len()].to_vec();
-    let emojis: Vec<String> = emoji_suffixes
+    let vote_text: String = emoji_suffixes
         .iter()
         .enumerate()
         .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
-        .collect();
-    let vote_text: String = emojis
-        .iter()
-        .map(|s| String::from(s))
         .collect();
     let response = MessageBuilder::new()
         .push_bold_line("Map Vote:")
@@ -129,7 +137,55 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         .build();
     let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
     for c in emoji_suffixes {
-        vote_msg.react(&context.http, ReactionType::Unicode(String::from(emoji_map.get(&c).unwrap()))).await.unwrap();
+        vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
+    }
+    // task::sleep(Duration::from_secs(50)).await;
+    let response = MessageBuilder::new()
+        .push("Voting will end in 10 seconds")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+    task::sleep(Duration::from_secs(10)).await;
+    let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
+    let mut results: Vec<ReactionResult> = Vec::new();
+    for reaction in updated_vote_msg.reactions {
+        let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
+        results.push(ReactionResult {
+            reaction_type: reaction.reaction_type,
+            count: reaction.count,
+            map,
+        });
+    }
+    let max_count = results
+        .iter()
+        .max_by(|x, y| x.count.cmp(&y.count))
+        .unwrap()
+        .count;
+    let final_results: Vec<ReactionResult> = results
+        .into_iter()
+        .filter(|m| m.count == max_count)
+        .collect();
+    if final_results.len() > 1 {
+        let map = &final_results.get(rand::thread_rng().gen_range(0, final_results.len())).unwrap().map;
+        let response = MessageBuilder::new()
+            .push("Maps were tied, `")
+            .push(&map)
+            .push("` was selected at random")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+    } else {
+        let map = &final_results[0].map;
+        let response = MessageBuilder::new()
+            .push("Map vote has concluded. `")
+            .push(&map)
+            .push("` will be played")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
     }
 }
 
