@@ -40,9 +40,18 @@ struct StateContainer {
     state: State,
 }
 
+struct Draft {
+    captain_a: Option<User>,
+    captain_b: Option<User>,
+    team_a: Vec<User>,
+    team_b: Vec<User>,
+    current_picker: User,
+}
+
 enum State {
     Queue,
     MapPick,
+    CaptainPick,
     Draft,
     Live,
 }
@@ -56,6 +65,7 @@ struct SteamIdCache;
 struct BotState;
 
 struct Maps;
+
 
 impl TypeMapKey for UserQueue {
     type Value = Vec<User>;
@@ -75,6 +85,10 @@ impl TypeMapKey for BotState {
 
 impl TypeMapKey for Maps {
     type Value = Vec<String>;
+}
+
+impl TypeMapKey for Draft {
+    type Value = Draft;
 }
 
 enum Command {

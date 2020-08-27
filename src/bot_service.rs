@@ -8,7 +8,7 @@ use serenity::model::channel::{Message, ReactionType};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{BotState, Config, Maps, State, StateContainer, SteamIdCache, UserQueue};
+use crate::{BotState, Config, Maps, State, StateContainer, SteamIdCache, UserQueue, Draft};
 
 struct ReactionResult {
     reaction_type: ReactionType,
@@ -187,7 +187,54 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
             println!("Error sending message: {:?}", why);
         }
     }
+    bot_state.state = State::CaptainPick;
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    draft.captain_a = None;
+    draft.captain_b = None;
+    draft.team_a = Vec::new();
+    draft.team_b = Vec::new();
 }
+
+
+pub(crate) async fn handle_captain(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    if bot_state != State::CaptainPick { return; }
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if msg.mentions.len() > 2 || msg.mentions.len() != 0 {
+        if msg.mentions.len() > 2 {
+            // TODO: add feedback message
+        }
+        if msg.mentions.len() != 0 {
+            // TODO: add feedback message
+        }
+        return;
+    }
+    if msg.mentions.len() == 2 {
+        draft.captain_a = Some(msg.mentions[0].clone());
+        draft.captain_b = Some(msg.mentions[1].clone());
+        draft.team_a.push(draft.captain_a.clone().unwrap());
+        draft.team_b.push(draft.captain_b.clone().unwrap());
+    } else {
+        if draft.captain_a == None && draft.captain_b == None {
+            draft.captain_a = Some(msg.author);
+            draft.team_a.push(draft.captain_a.clone().unwrap());
+        } else if draft.captain_a == None && draft.captain_b != None {
+            draft.captain_a = Some(msg.author);
+            draft.team_a.push(draft.captain_a.clone().unwrap());
+        } else {
+            draft.captain_b = Some(msg.author);
+            draft.team_b.push(draft.captain_b.clone().unwrap());
+        }
+    }
+    if draft.captain_a != None && draft.captain_b != None {
+        // TODO: add feedback message
+        bot_state.state = State::Draft;
+        draft.current_picker = draft.captain_a.unwrap();
+    }
+}
+
+pub(crate) async fn handle_pick(context: Context, msg: Message) {}
 
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
