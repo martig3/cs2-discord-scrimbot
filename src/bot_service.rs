@@ -116,9 +116,21 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         }
         return;
     }
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::MapPick;
-    let maps: &Vec<String> = data.get::<Maps>().unwrap();
+    if user_queue.len() != 10 {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" the queue is not full yet")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
+    {
+        let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::MapPick;
+    }
+    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
     let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
     let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
     let unicode_emoji_map = populate_unicode_emojis().await;
@@ -187,54 +199,110 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
             println!("Error sending message: {:?}", why);
         }
     }
-    bot_state.state = State::CaptainPick;
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    draft.captain_a = None;
-    draft.captain_b = None;
-    draft.team_a = Vec::new();
-    draft.team_b = Vec::new();
+    {
+        let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::CaptainPick;
+    }
+    {
+        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+        draft.captain_a = None;
+        draft.captain_b = None;
+        draft.team_a = Vec::new();
+        draft.team_b = Vec::new();
+    }
+    // TODO: add feedback message
 }
 
 
 pub(crate) async fn handle_captain(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-    if bot_state != State::CaptainPick { return; }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    if msg.mentions.len() > 2 || msg.mentions.len() != 0 {
-        if msg.mentions.len() > 2 {
-            // TODO: add feedback message
-        }
-        if msg.mentions.len() != 0 {
-            // TODO: add feedback message
-        }
-        return;
+    {
+        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        if bot_state.state != State::CaptainPick { return; }
     }
-    if msg.mentions.len() == 2 {
-        draft.captain_a = Some(msg.mentions[0].clone());
-        draft.captain_b = Some(msg.mentions[1].clone());
-        draft.team_a.push(draft.captain_a.clone().unwrap());
-        draft.team_b.push(draft.captain_b.clone().unwrap());
-    } else {
-        if draft.captain_a == None && draft.captain_b == None {
-            draft.captain_a = Some(msg.author);
+    {
+        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+        if msg.mentions.len() > 2 || msg.mentions.len() != 0 {
+            if msg.mentions.len() > 2 {
+                // TODO: add feedback message
+            }
+            if msg.mentions.len() != 0 {
+                // TODO: add feedback message
+            }
+            return;
+        }
+        if msg.mentions.len() == 2 {
+            draft.captain_a = Some(msg.mentions[0].clone());
+            draft.captain_b = Some(msg.mentions[1].clone());
             draft.team_a.push(draft.captain_a.clone().unwrap());
-        } else if draft.captain_a == None && draft.captain_b != None {
-            draft.captain_a = Some(msg.author);
-            draft.team_a.push(draft.captain_a.clone().unwrap());
-        } else {
-            draft.captain_b = Some(msg.author);
             draft.team_b.push(draft.captain_b.clone().unwrap());
+        } else {
+            if draft.captain_a == None && draft.captain_b == None {
+                // TODO: add feedback message
+                draft.captain_a = Some(msg.author);
+                draft.team_a.push(draft.captain_a.clone().unwrap());
+            } else if draft.captain_a == None && draft.captain_b != None {
+                // TODO: add feedback message
+                draft.captain_a = Some(msg.author);
+                draft.team_a.push(draft.captain_a.clone().unwrap());
+            } else {
+                // TODO: add feedback message
+                draft.captain_b = Some(msg.author);
+                draft.team_b.push(draft.captain_b.clone().unwrap());
+            }
+        }
+        if draft.captain_a != None && draft.captain_b != None {
+            draft.current_picker = draft.captain_a.clone().unwrap();
+        } else {
+            return;
         }
     }
-    if draft.captain_a != None && draft.captain_b != None {
-        // TODO: add feedback message
-        bot_state.state = State::Draft;
-        draft.current_picker = draft.captain_a.unwrap();
-    }
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::Draft;
+    println!("State changed to Draft");
+    // TODO: add feedback message
 }
 
-pub(crate) async fn handle_pick(context: Context, msg: Message) {}
+pub(crate) async fn handle_pick(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    {
+        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        if bot_state.state != State::Draft {
+            // TODO: add feedback message
+            return;
+        }
+    }
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let picked = msg.mentions[0].clone();
+    if draft.current_picker != msg.author {
+        // TODO: add feedback message
+        return;
+    }
+    if draft.team_a.contains(&draft.current_picker) {
+        if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
+            draft.team_a.push(picked);
+            draft.current_picker = draft.captain_b.clone().unwrap();
+        } else {
+            // TODO: add feedback message
+        }
+    } else {
+        if draft.team_b.contains(&draft.current_picker) {
+            if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
+                draft.team_b.push(picked);
+                draft.current_picker = draft.captain_a.clone().unwrap();
+            } else {
+                // TODO: add feedback message
+            }
+        }
+    }
+    {
+        if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
+            let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+            bot_state.state = State::Live;
+            // TODO: add feedback message
+        }
+    }
+}
 
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;

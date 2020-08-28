@@ -36,6 +36,7 @@ struct DiscordConfig {
     token: String,
 }
 
+#[derive(PartialEq)]
 struct StateContainer {
     state: State,
 }
@@ -48,6 +49,7 @@ struct Draft {
     current_picker: User,
 }
 
+#[derive(PartialEq)]
 enum State {
     Queue,
     MapPick,
