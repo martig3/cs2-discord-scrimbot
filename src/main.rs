@@ -46,7 +46,7 @@ struct Draft {
     captain_b: Option<User>,
     team_a: Vec<User>,
     team_b: Vec<User>,
-    current_picker: User,
+    current_picker: Option<User>,
 }
 
 #[derive(PartialEq)]
@@ -101,8 +101,12 @@ enum Command {
     STEAMID,
     ADDMAP,
     REMOVEMAP,
+    CAPTAIN,
+    PICK,
+    LAUNCH,
     UNKNOWN,
 }
+
 impl FromStr for Command {
     type Err = ();
 
@@ -114,6 +118,9 @@ impl FromStr for Command {
             "!start" => Ok(Command::START),
             "!steamid" => Ok(Command::STEAMID),
             "!addmap" => Ok(Command::ADDMAP),
+            "!captain" => Ok(Command::CAPTAIN),
+            "!pick" => Ok(Command::PICK),
+            "!launch" => Ok(Command::LAUNCH),
             "!removemap" => Ok(Command::REMOVEMAP),
             _ => Err(()),
         }
@@ -139,6 +146,9 @@ impl EventHandler for Handler {
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
             Command::REMOVEMAP => bot_service::handle_remove_map(context, msg).await,
+            Command::CAPTAIN => bot_service::handle_captain(context, msg).await,
+            Command::PICK => bot_service::handle_pick(context, msg).await,
+            Command::LAUNCH => bot_service::handle_launch_server(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }
@@ -165,6 +175,7 @@ async fn main() -> () {
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
         data.insert::<BotState>(StateContainer { state: State::Queue });
         data.insert::<Maps>(read_maps().await.unwrap());
+        data.insert::<Draft>(Draft { captain_a: None, captain_b: None, current_picker: None, team_a: Vec::new(), team_b: Vec::new() });
     }
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);

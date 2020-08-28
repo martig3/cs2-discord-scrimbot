@@ -18,20 +18,18 @@ struct ReactionResult {
 
 pub(crate) async fn handle_join(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    {
-        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
-        if !steam_id_cache.contains_key(msg.author.id.as_u64()) {
-            let response = MessageBuilder::new()
-                .mention(&msg.author)
-                .push(" steamID not found for your discord user, \
+    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+    if !steam_id_cache.contains_key(msg.author.id.as_u64()) {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" steamID not found for your discord user, \
                     please use `!steamid <your steamID>` to assign one. Example: `!steamid STEAM_0:1:12345678` ")
-                .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
-            }
-            return;
+            .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
         }
+        return;
     }
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
     if user_queue.contains(&msg.author) {
@@ -104,130 +102,131 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_start(context: Context, msg: Message) {
-    let mut data = context.data.write().await;
-    let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    if !user_queue.contains(&msg.author) {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" is not in the queue or does not have the correct role")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
-        }
-        return;
-    }
-    if user_queue.len() != 10 {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" the queue is not full yet")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
-        }
-        return;
-    }
     {
-        let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        let mut data = context.data.write().await;
+        let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+        if !user_queue.contains(&msg.author) {
+            send_simple_tagged_msg(&context, &msg, " is not in the queue or does not have the correct role", &msg.author).await;
+            return;
+        }
+    }
+    // if user_queue.len() != 10 {
+    //     let response = MessageBuilder::new()
+    //         .mention(&msg.author)
+    //         .push(" the queue is not full yet")
+    //         .build();
+    //     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+    //         println!("Error sending message: {:?}", why);
+    //     }
+    //     return;
+    // }
+    {
+        let mut data = context.data.write().await;
+        let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
         bot_state.state = State::MapPick;
     }
-    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
-    let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
-    let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
-    let unicode_emoji_map = populate_unicode_emojis().await;
-    for (i, map) in maps.iter().enumerate() {
-        unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
-    }
-    let emoji_suffixes = a_to_z[..maps.len()].to_vec();
-    let vote_text: String = emoji_suffixes
-        .iter()
-        .enumerate()
-        .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
-        .collect();
-    let response = MessageBuilder::new()
-        .push_bold_line("Map Vote:")
-        .push(vote_text)
-        .build();
-    let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
-    for c in emoji_suffixes {
-        vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
-    }
-    // task::sleep(Duration::from_secs(50)).await;
-    let response = MessageBuilder::new()
-        .push("Voting will end in 10 seconds")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
-    task::sleep(Duration::from_secs(10)).await;
-    let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
-    let mut results: Vec<ReactionResult> = Vec::new();
-    for reaction in updated_vote_msg.reactions {
-        let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
-        results.push(ReactionResult {
-            reaction_type: reaction.reaction_type,
-            count: reaction.count,
-            map,
-        });
-    }
-    let max_count = results
-        .iter()
-        .max_by(|x, y| x.count.cmp(&y.count))
-        .unwrap()
-        .count;
-    let final_results: Vec<ReactionResult> = results
-        .into_iter()
-        .filter(|m| m.count == max_count)
-        .collect();
-    if final_results.len() > 1 {
-        let map = &final_results.get(rand::thread_rng().gen_range(0, final_results.len())).unwrap().map;
+    {
+        let mut data = context.data.write().await;
+        let maps: &Vec<String> = &data.get::<Maps>().unwrap();
+        let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
+        let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
+        let unicode_emoji_map = populate_unicode_emojis().await;
+        for (i, map) in maps.iter().enumerate() {
+            unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
+        }
+        let emoji_suffixes = a_to_z[..maps.len()].to_vec();
+        let vote_text: String = emoji_suffixes
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
+            .collect();
         let response = MessageBuilder::new()
-            .push("Maps were tied, `")
-            .push(&map)
-            .push("` was selected at random")
+            .push_bold_line("Map Vote:")
+            .push(vote_text)
+            .build();
+        let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
+        for c in emoji_suffixes {
+            vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
+        }
+        // task::sleep(Duration::from_secs(50)).await;
+        let response = MessageBuilder::new()
+            .push("Voting will end in 10 seconds")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
-    } else {
-        let map = &final_results[0].map;
-        let response = MessageBuilder::new()
-            .push("Map vote has concluded. `")
-            .push(&map)
-            .push("` will be played")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+        task::sleep(Duration::from_secs(10)).await;
+        let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
+        let mut results: Vec<ReactionResult> = Vec::new();
+        for reaction in updated_vote_msg.reactions {
+            let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
+            results.push(ReactionResult {
+                reaction_type: reaction.reaction_type,
+                count: reaction.count,
+                map,
+            });
+        }
+        let max_count = results
+            .iter()
+            .max_by(|x, y| x.count.cmp(&y.count))
+            .unwrap()
+            .count;
+        let final_results: Vec<ReactionResult> = results
+            .into_iter()
+            .filter(|m| m.count == max_count)
+            .collect();
+        if final_results.len() > 1 {
+            let map = &final_results.get(rand::thread_rng().gen_range(0, final_results.len())).unwrap().map;
+            let response = MessageBuilder::new()
+                .push("Maps were tied, `")
+                .push(&map)
+                .push("` was selected at random")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
+        } else {
+            let map = &final_results[0].map;
+            let response = MessageBuilder::new()
+                .push("Map vote has concluded. `")
+                .push(&map)
+                .push("` will be played")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
         }
     }
     {
-        let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        let mut data = context.data.write().await;
+        let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
         bot_state.state = State::CaptainPick;
     }
-    {
-        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-        draft.captain_a = None;
-        draft.captain_b = None;
-        draft.team_a = Vec::new();
-        draft.team_b = Vec::new();
-    }
-    // TODO: add feedback message
+    let mut data = context.data.write().await;
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    draft.captain_a = None;
+    draft.captain_b = None;
+    draft.team_a = Vec::new();
+    draft.team_b = Vec::new();
+    send_simple_msg(&context, &msg, "Starting draft phase. Two users type `!captain` to start picking teams.").await;
 }
 
 
 pub(crate) async fn handle_captain(context: Context, msg: Message) {
-    let mut data = context.data.write().await;
     {
+        let mut data = context.data.write().await;
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         if bot_state.state != State::CaptainPick { return; }
     }
     {
+        let mut data = context.data.write().await;
         let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-        if msg.mentions.len() > 2 || msg.mentions.len() != 0 {
+        if &msg.mentions.len() > &2 || &msg.mentions.len() != &0 {
             if msg.mentions.len() > 2 {
-                // TODO: add feedback message
+                send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
             }
             if msg.mentions.len() != 0 {
-                // TODO: add feedback message
+                send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
             }
             return;
         }
@@ -236,31 +235,35 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
             draft.captain_b = Some(msg.mentions[1].clone());
             draft.team_a.push(draft.captain_a.clone().unwrap());
             draft.team_b.push(draft.captain_b.clone().unwrap());
+            send_simple_msg(&context, &msg, "Captains set manually.").await;
         } else {
-            if draft.captain_a == None && draft.captain_b == None {
-                // TODO: add feedback message
-                draft.captain_a = Some(msg.author);
-                draft.team_a.push(draft.captain_a.clone().unwrap());
-            } else if draft.captain_a == None && draft.captain_b != None {
-                // TODO: add feedback message
+            if draft.captain_a == None {
+                send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
                 draft.captain_a = Some(msg.author);
                 draft.team_a.push(draft.captain_a.clone().unwrap());
             } else {
-                // TODO: add feedback message
+                send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
                 draft.captain_b = Some(msg.author);
                 draft.team_b.push(draft.captain_b.clone().unwrap());
             }
         }
         if draft.captain_a != None && draft.captain_b != None {
-            draft.current_picker = draft.captain_a.clone().unwrap();
-        } else {
-            return;
+            draft.current_picker = draft.captain_a.clone();
+            let response = MessageBuilder::new()
+                .push("Captain pick has concluded. ")
+                .mention(&draft.current_picker.clone().unwrap())
+                .push(" start gets first `!pick @user`")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
         }
     }
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::Draft;
-    println!("State changed to Draft");
-    // TODO: add feedback message
+    {
+        let mut data = context.data.write().await;
+        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::Draft;
+    }
 }
 
 pub(crate) async fn handle_pick(context: Context, msg: Message) {
@@ -274,24 +277,26 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     let picked = msg.mentions[0].clone();
-    if draft.current_picker != msg.author {
-        // TODO: add feedback message
+    if draft.current_picker.clone().unwrap() != msg.author {
+        send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
         return;
     }
-    if draft.team_a.contains(&draft.current_picker) {
+    if draft.team_a.contains(&draft.current_picker.clone().unwrap()) {
         if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
+            send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
             draft.team_a.push(picked);
-            draft.current_picker = draft.captain_b.clone().unwrap();
+            draft.current_picker = draft.captain_b.clone();
         } else {
-            // TODO: add feedback message
+            send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
         }
     } else {
-        if draft.team_b.contains(&draft.current_picker) {
+        if draft.team_b.contains(&draft.current_picker.clone().unwrap()) {
             if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
+                send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
                 draft.team_b.push(picked);
-                draft.current_picker = draft.captain_a.clone().unwrap();
+                draft.current_picker = draft.captain_a.clone();
             } else {
-                // TODO: add feedback message
+                send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
             }
         }
     }
@@ -299,7 +304,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
             let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
             bot_state.state = State::Live;
-            // TODO: add feedback message
+            send_simple_msg(&context, &msg, "Draft has concluded. Type `!launch` to start the server.").await;
         }
     }
 }
@@ -403,8 +408,10 @@ pub(crate) async fn write_to_file(path: String, content: String) {
         .expect(&error_string);
 }
 
-pub(crate) async fn launch_server(context: &Context, msg: Message) {
-    let data = context.data.write().await;
+pub(crate) async fn handle_launch_server(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let draft: &Draft = &data.get_mut::<Draft>().unwrap();
+    // TODO: add steamid to form
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" server is starting...")
@@ -428,6 +435,25 @@ pub(crate) async fn launch_server(context: &Context, msg: Message) {
         .await
         .unwrap();
     println!("Start match response - {:#?}", resp);
+}
+
+pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
+    let response = MessageBuilder::new()
+        .push(text)
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, text: &str, mentioned: &User) {
+    let response = MessageBuilder::new()
+        .mention(mentioned)
+        .push(text)
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
