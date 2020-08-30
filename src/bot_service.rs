@@ -208,7 +208,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     draft.captain_b = None;
     draft.team_a = Vec::new();
     draft.team_b = Vec::new();
-    send_simple_msg(&context, &msg, "Starting draft phase. Two users type `!captain` to start picking teams.").await;
+    send_simple_msg(&context, &msg, "Starting captain pick phase. Two users type `!captain` to start picking teams.").await;
 }
 
 
@@ -216,7 +216,10 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
     {
         let mut data = context.data.write().await;
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-        if bot_state.state != State::CaptainPick { return; }
+        if bot_state.state != State::CaptainPick {
+            send_simple_tagged_msg(&context, &msg, " command ignored, not in the captain pick phase", &msg.author).await;
+            return;
+        }
     }
     {
         let mut data = context.data.write().await;
@@ -250,9 +253,9 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         if draft.captain_a != None && draft.captain_b != None {
             draft.current_picker = draft.captain_a.clone();
             let response = MessageBuilder::new()
-                .push("Captain pick has concluded. ")
+                .push("Captain pick has concluded. Starting draft phase. ")
                 .mention(&draft.current_picker.clone().unwrap())
-                .push(" start gets first `!pick @user`")
+                .push(" gets first `!pick @user`")
                 .build();
             if let Err(why) = msg.channel_id.say(&context.http, &response).await {
                 println!("Error sending message: {:?}", why);
@@ -271,7 +274,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         if bot_state.state != State::Draft {
-            // TODO: add feedback message
+            send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
             return;
         }
     }
@@ -371,7 +374,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
     if !maps.contains(&map_name) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
-            .push(" unable to remove map, doesn't exist in list.")
+            .push(" this map, doesn't exist in the list.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
@@ -410,8 +413,20 @@ pub(crate) async fn write_to_file(path: String, content: String) {
 
 pub(crate) async fn handle_launch_server(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let draft: &Draft = &data.get_mut::<Draft>().unwrap();
-    // TODO: add steamid to form
+    let draft: &Draft = &data.get::<Draft>().unwrap();
+    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+    let mut team_a_steam_ids: String = draft.team_a
+        .iter()
+        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().replacen('0', "1", 1))
+        .map(|s| format!("{},", s))
+        .collect();
+    team_a_steam_ids.remove(team_a_steam_ids.len());
+    let mut team_b_steam_ids: String = draft.team_b
+        .iter()
+        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().replacen('0', "1", 1))
+        .map(|s| format!("{},", s))
+        .collect();
+    team_b_steam_ids.remove(team_b_steam_ids.len());
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" server is starting...")
@@ -425,16 +440,19 @@ pub(crate) async fn handle_launch_server(context: Context, msg: Message) {
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server_id = &config.server.id;
+
     let start_match_url = String::from("https://dathost.net/api/0.1/matches");
 
     let resp = client
         .put(&start_match_url)
-        .form(&[("game_server_id", &server_id)])
+        .form(&[("game_server_id", &server_id), ("team1_steam_ids", &&team_a_steam_ids), ("team2_steam_ids", &&team_b_steam_ids)])
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
         .unwrap();
     println!("Start match response - {:#?}", resp);
+
+    send_simple_msg(&context, &msg, &format!("Server has started. Copy `connect {}` into the console to connect", config.server.url)).await;
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {

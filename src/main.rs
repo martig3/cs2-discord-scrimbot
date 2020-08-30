@@ -23,6 +23,7 @@ struct Config {
 #[derive(Serialize, Deserialize)]
 struct ServerConfig {
     id: String,
+    url: String,
 }
 
 #[derive(Serialize, Deserialize)]
