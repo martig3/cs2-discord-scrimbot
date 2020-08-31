@@ -9,6 +9,7 @@ use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
 use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue};
+use regex::Regex;
 
 struct ReactionResult {
     count: u64,
@@ -166,7 +167,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     for c in emoji_suffixes {
         vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
     }
-    // task::sleep(Duration::from_secs(50)).await;
+    task::sleep(Duration::from_secs(50)).await;
     let response = MessageBuilder::new()
         .push("Voting will end in 10 seconds")
         .build();
@@ -220,10 +221,10 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let mut start_match_url = String::from("https://dathost.net/api/0.1/game-servers/");
-    start_match_url.push_str(&config.server.id);
+    let mut update_map_url = String::from("https://dathost.net/api/0.1/game-servers/");
+    update_map_url.push_str(&config.server.id);
     let resp = client
-        .put(&start_match_url)
+        .put(&update_map_url)
         .form(&[("csgo_settings.mapgroup_start_map", &selected_map)])
         .basic_auth(&dathost_username, dathost_password)
         .send()
@@ -336,11 +337,22 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
+    let steam_id = msg.content.trim().split(" ").take(2).count();
+    if steam_id == 1 {
+        send_simple_tagged_msg(&context, &msg, " please check the command formatting. There must be a space in between `.steamid` and your steamid. \
+        Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
+        return;
+    }
     let steam_id_str: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    let steam_id_regex = Regex::new("^STEAM_[0-5]:[01]:\\d+$").unwrap();
+    if !steam_id_regex.is_match(&steam_id_str) {
+        send_simple_tagged_msg(&context, &msg, " invalid steamid formatting. Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
+        return;
+    }
     steam_id_cache.insert(*msg.author.id.as_u64(), String::from(&steam_id_str));
     write_to_file(String::from("steam-ids.json"), serde_json::to_string(steam_id_cache).unwrap()).await;
     let response = MessageBuilder::new()
-        .push("Updated steamID for ")
+        .push("Updated steamid for ")
         .mention(&msg.author)
         .push(" to `")
         .push(&steam_id_str)
