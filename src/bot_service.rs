@@ -8,10 +8,9 @@ use serenity::model::channel::{Message, ReactionType};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{BotState, Config, Maps, State, StateContainer, SteamIdCache, UserQueue, Draft};
+use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue};
 
 struct ReactionResult {
-    reaction_type: ReactionType,
     count: u64,
     map: String,
 }
@@ -23,7 +22,7 @@ pub(crate) async fn handle_join(context: Context, msg: Message) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
             .push(" steamID not found for your discord user, \
-                    please use `!steamid <your steamID>` to assign one. Example: `!steamid STEAM_0:1:12345678` ")
+                    please use `.steamid <your steamID>` to assign one. Example: `.steamid STEAM_0:1:12345678` ")
             .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
@@ -101,169 +100,191 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
     }
 }
 
+pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
+    let data = context.data.write().await;
+    let ready_queue: &Vec<User> = data.get::<ReadyQueue>().unwrap();
+    let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
+    let mut user_name = String::from("");
+    for user in user_queue {
+        if !ready_queue.contains(user) {
+            user_name.push_str("\n- @");
+            user_name.push_str(&user.name);
+        }
+    }
+    let response = MessageBuilder::new()
+        .push("Players that are not `.ready`:")
+        .push(user_name)
+        .build();
+
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
 pub(crate) async fn handle_start(context: Context, msg: Message) {
-    {
-        let mut data = context.data.write().await;
-        let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-        if !user_queue.contains(&msg.author) {
-            send_simple_tagged_msg(&context, &msg, " is not in the queue or does not have the correct role", &msg.author).await;
-            return;
-        }
+    let mut data = context.data.write().await;
+    let bot_state: &StateContainer = data.get::<BotState>().unwrap();
+    if bot_state.state != State::Queue {
+        send_simple_tagged_msg(&context, &msg, " `.start` command has already been entered", &msg.author).await;
+        return;
     }
-    // if user_queue.len() != 10 {
-    //     let response = MessageBuilder::new()
-    //         .mention(&msg.author)
-    //         .push(" the queue is not full yet")
-    //         .build();
-    //     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-    //         println!("Error sending message: {:?}", why);
-    //     }
-    //     return;
-    // }
-    {
-        let mut data = context.data.write().await;
-        let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-        bot_state.state = State::MapPick;
+    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+    if !user_queue.contains(&msg.author) {
+        send_simple_tagged_msg(&context, &msg, " users that are not in the queue cannot start the match", &msg.author).await;
+        return;
     }
-    {
-        let mut data = context.data.write().await;
-        let maps: &Vec<String> = &data.get::<Maps>().unwrap();
-        let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
-        let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
-        let unicode_emoji_map = populate_unicode_emojis().await;
-        for (i, map) in maps.iter().enumerate() {
-            unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
-        }
-        let emoji_suffixes = a_to_z[..maps.len()].to_vec();
-        let vote_text: String = emoji_suffixes
-            .iter()
-            .enumerate()
-            .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
-            .collect();
+    if user_queue.len() != 10 {
         let response = MessageBuilder::new()
-            .push_bold_line("Map Vote:")
-            .push(vote_text)
-            .build();
-        let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
-        for c in emoji_suffixes {
-            vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
-        }
-        // task::sleep(Duration::from_secs(50)).await;
-        let response = MessageBuilder::new()
-            .push("Voting will end in 10 seconds")
+            .mention(&msg.author)
+            .push(" the queue is not full yet")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
-        task::sleep(Duration::from_secs(10)).await;
-        let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
-        let mut results: Vec<ReactionResult> = Vec::new();
-        for reaction in updated_vote_msg.reactions {
-            let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
-            results.push(ReactionResult {
-                reaction_type: reaction.reaction_type,
-                count: reaction.count,
-                map,
-            });
-        }
-        let max_count = results
-            .iter()
-            .max_by(|x, y| x.count.cmp(&y.count))
-            .unwrap()
-            .count;
-        let final_results: Vec<ReactionResult> = results
-            .into_iter()
-            .filter(|m| m.count == max_count)
-            .collect();
-        if final_results.len() > 1 {
-            let map = &final_results.get(rand::thread_rng().gen_range(0, final_results.len())).unwrap().map;
-            let response = MessageBuilder::new()
-                .push("Maps were tied, `")
-                .push(&map)
-                .push("` was selected at random")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
-            }
-        } else {
-            let map = &final_results[0].map;
-            let response = MessageBuilder::new()
-                .push("Map vote has concluded. `")
-                .push(&map)
-                .push("` will be played")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
-            }
-        }
+        return;
     }
-    {
-        let mut data = context.data.write().await;
-        let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-        bot_state.state = State::CaptainPick;
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::MapPick;
+    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
+    let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
+    let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
+    let unicode_emoji_map = populate_unicode_emojis().await;
+    for (i, map) in maps.iter().enumerate() {
+        unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
     }
-    let mut data = context.data.write().await;
+    let emoji_suffixes = a_to_z[..maps.len()].to_vec();
+    let vote_text: String = emoji_suffixes
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!(":regional_indicator_{}: `{}`\n", c, &maps[i]))
+        .collect();
+    let response = MessageBuilder::new()
+        .push_bold_line("Map Vote:")
+        .push(vote_text)
+        .build();
+    let vote_msg = msg.channel_id.say(&context.http, &response).await.unwrap();
+    for c in emoji_suffixes {
+        vote_msg.react(&context.http, ReactionType::Unicode(String::from(unicode_emoji_map.get(&c).unwrap()))).await.unwrap();
+    }
+    // task::sleep(Duration::from_secs(50)).await;
+    let response = MessageBuilder::new()
+        .push("Voting will end in 10 seconds")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+    task::sleep(Duration::from_secs(10)).await;
+    let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
+    let mut results: Vec<ReactionResult> = Vec::new();
+    for reaction in updated_vote_msg.reactions {
+        let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
+        results.push(ReactionResult {
+            count: reaction.count,
+            map,
+        });
+    }
+    let max_count = results
+        .iter()
+        .max_by(|x, y| x.count.cmp(&y.count))
+        .unwrap()
+        .count;
+    let final_results: Vec<ReactionResult> = results
+        .into_iter()
+        .filter(|m| m.count == max_count)
+        .collect();
+    let mut selected_map = String::from("");
+    if final_results.len() > 1 {
+        let map = &final_results.get(rand::thread_rng().gen_range(0, final_results.len())).unwrap().map;
+        let response = MessageBuilder::new()
+            .push("Maps were tied, `")
+            .push(&map)
+            .push("` was selected at random")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        selected_map.push_str(map);
+    } else {
+        let map = &final_results[0].map;
+        let response = MessageBuilder::new()
+            .push("Map vote has concluded. `")
+            .push(&map)
+            .push("` will be played")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        selected_map.push_str(map);
+    }
+    let config: &Config = data.get::<Config>().unwrap();
+    let client = reqwest::Client::new();
+    let dathost_username = &config.dathost.username;
+    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+    let mut start_match_url = String::from("https://dathost.net/api/0.1/game-servers/");
+    start_match_url.push_str(&config.server.id);
+    let resp = client
+        .put(&start_match_url)
+        .form(&[("csgo_settings.mapgroup_start_map", &selected_map)])
+        .basic_auth(&dathost_username, dathost_password)
+        .send()
+        .await
+        .unwrap();
+    println!("Change map response - {:#?}", resp.status());
+    let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::CaptainPick;
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     draft.captain_a = None;
     draft.captain_b = None;
     draft.team_a = Vec::new();
     draft.team_b = Vec::new();
-    send_simple_msg(&context, &msg, "Starting captain pick phase. Two users type `!captain` to start picking teams.").await;
+    send_simple_msg(&context, &msg, "Starting captain pick phase. Two users type `.captain` to start picking teams.").await;
 }
 
 
 pub(crate) async fn handle_captain(context: Context, msg: Message) {
-    {
-        let mut data = context.data.write().await;
-        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-        if bot_state.state != State::CaptainPick {
-            send_simple_tagged_msg(&context, &msg, " command ignored, not in the captain pick phase", &msg.author).await;
-            return;
-        }
+    let mut data = context.data.write().await;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    if bot_state.state != State::CaptainPick {
+        send_simple_tagged_msg(&context, &msg, " command ignored, not in the captain pick phase", &msg.author).await;
+        return;
     }
-    {
-        let mut data = context.data.write().await;
-        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-        if &msg.mentions.len() > &2 || &msg.mentions.len() != &0 {
-            if msg.mentions.len() > 2 {
-                send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
-            }
-            if msg.mentions.len() != 0 {
-                send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
-            }
-            return;
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if &msg.mentions.len() > &2 || &msg.mentions.len() != &0 {
+        if msg.mentions.len() > 2 {
+            send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
         }
-        if msg.mentions.len() == 2 {
-            draft.captain_a = Some(msg.mentions[0].clone());
-            draft.captain_b = Some(msg.mentions[1].clone());
+        if msg.mentions.len() != 0 {
+            send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
+        }
+        return;
+    }
+    if msg.mentions.len() == 2 {
+        draft.captain_a = Some(msg.mentions[0].clone());
+        draft.captain_b = Some(msg.mentions[1].clone());
+        draft.team_a.push(draft.captain_a.clone().unwrap());
+        draft.team_b.push(draft.captain_b.clone().unwrap());
+        send_simple_msg(&context, &msg, "Captains set manually.").await;
+    } else {
+        if draft.captain_a == None {
+            send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
+            draft.captain_a = Some(msg.author);
             draft.team_a.push(draft.captain_a.clone().unwrap());
-            draft.team_b.push(draft.captain_b.clone().unwrap());
-            send_simple_msg(&context, &msg, "Captains set manually.").await;
         } else {
-            if draft.captain_a == None {
-                send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
-                draft.captain_a = Some(msg.author);
-                draft.team_a.push(draft.captain_a.clone().unwrap());
-            } else {
-                send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
-                draft.captain_b = Some(msg.author);
-                draft.team_b.push(draft.captain_b.clone().unwrap());
-            }
-        }
-        if draft.captain_a != None && draft.captain_b != None {
-            draft.current_picker = draft.captain_a.clone();
-            let response = MessageBuilder::new()
-                .push("Captain pick has concluded. Starting draft phase. ")
-                .mention(&draft.current_picker.clone().unwrap())
-                .push(" gets first `!pick @user`")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
-            }
+            send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
+            draft.captain_b = Some(msg.author);
+            draft.team_b.push(draft.captain_b.clone().unwrap());
         }
     }
-    {
-        let mut data = context.data.write().await;
+    if draft.captain_a != None && draft.captain_b != None {
+        draft.current_picker = draft.captain_a.clone();
+        let response = MessageBuilder::new()
+            .push("Captain pick has concluded. Starting draft phase. ")
+            .mention(&draft.current_picker.clone().unwrap())
+            .push(" gets first `.pick @user`")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Draft;
     }
@@ -271,14 +292,16 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
 
 pub(crate) async fn handle_pick(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    {
-        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-        if bot_state.state != State::Draft {
-            send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
-            return;
-        }
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    if bot_state.state != State::Draft {
+        send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
+        return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if msg.mentions.len() == 0 {
+        send_simple_tagged_msg(&context, &msg, " please mention a discord user in your message.", &msg.author).await;
+        return;
+    }
     let picked = msg.mentions[0].clone();
     if draft.current_picker.clone().unwrap() != msg.author {
         send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
@@ -303,12 +326,10 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
             }
         }
     }
-    {
-        if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
-            let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-            bot_state.state = State::Live;
-            send_simple_msg(&context, &msg, "Draft has concluded. Type `!launch` to start the server.").await;
-        }
+    if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
+        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::Live;
+        send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` to ready up. Once all players are `.ready` the server will launch.").await;
     }
 }
 
@@ -374,7 +395,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
     if !maps.contains(&map_name) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
-            .push(" this map, doesn't exist in the list.")
+            .push(" this map doesn't exist in the list.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
@@ -397,7 +418,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
 
 pub(crate) async fn handle_unknown(context: Context, msg: Message) {
     let response = MessageBuilder::new()
-        .push("Unknown command, type `!help` for list of commands.")
+        .push("Unknown command, type `.help` for list of commands.")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         println!("Error sending message: {:?}", why);
@@ -411,8 +432,8 @@ pub(crate) async fn write_to_file(path: String, content: String) {
         .expect(&error_string);
 }
 
-pub(crate) async fn handle_launch_server(context: Context, msg: Message) {
-    let mut data = context.data.write().await;
+pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
+    let data = context.data.write().await;
     let draft: &Draft = &data.get::<Draft>().unwrap();
     let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
     let mut team_a_steam_ids: String = draft.team_a
@@ -445,14 +466,72 @@ pub(crate) async fn handle_launch_server(context: Context, msg: Message) {
 
     let resp = client
         .put(&start_match_url)
-        .form(&[("game_server_id", &server_id), ("team1_steam_ids", &&team_a_steam_ids), ("team2_steam_ids", &&team_b_steam_ids)])
+        .form(&[("game_server_id", &server_id),
+            ("team1_steam_ids", &&team_a_steam_ids),
+            ("team2_steam_ids", &&team_b_steam_ids)])
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
         .unwrap();
     println!("Start match response - {:#?}", resp);
 
-    send_simple_msg(&context, &msg, &format!("Server has started. Copy `connect {}` into the console to connect", config.server.url)).await;
+    let mut steam_web_url = String::from("steam://connect/");
+    steam_web_url.push_str(&config.server.url);
+    send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
+}
+
+pub(crate) async fn handle_ready(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let bot_state: &StateContainer = data.get::<BotState>().unwrap();
+    if bot_state.state != State::Ready {
+        send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
+        return;
+    }
+    let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
+    if ready_queue.contains(&msg.author) {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(", you're already `.ready`")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
+    ready_queue.push(msg.author.clone());
+    let response = MessageBuilder::new()
+        .mention(&msg.author)
+        .push(" is ready. Players ready: ")
+        .push(ready_queue.len().to_string())
+        .push("/10")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+
+    if ready_queue.len() == 10 {
+        handle_launch_server(&context, &msg).await;
+        let draft: &Draft = &data.get::<Draft>().unwrap();
+        let config: &Config = &data.get::<Config>().unwrap();
+        for user in &draft.team_a {
+            if let Some(guild) = &msg.guild(&context.cache).await {
+                if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_a_channel_id).await {
+                    println!("Cannot move user: {:?}", why);
+                }
+            }
+        }
+        for user in &draft.team_b {
+            if let Some(guild) = &msg.guild(&context.cache).await {
+                if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_b_channel_id).await {
+                    println!("Cannot move user: {:?}", why);
+                }
+            }
+        }
+        let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+        user_queue.clear();
+        let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
+        ready_queue.clear();
+    }
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {

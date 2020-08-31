@@ -35,6 +35,8 @@ struct DathostConfig {
 #[derive(Serialize, Deserialize)]
 struct DiscordConfig {
     token: String,
+    team_a_channel_id: u64,
+    team_b_channel_id: u64,
 }
 
 #[derive(PartialEq)]
@@ -56,12 +58,15 @@ enum State {
     MapPick,
     CaptainPick,
     Draft,
+    Ready,
     Live,
 }
 
 struct Handler;
 
 struct UserQueue;
+
+struct ReadyQueue;
 
 struct SteamIdCache;
 
@@ -71,6 +76,10 @@ struct Maps;
 
 
 impl TypeMapKey for UserQueue {
+    type Value = Vec<User>;
+}
+
+impl TypeMapKey for ReadyQueue{
     type Value = Vec<User>;
 }
 
@@ -104,7 +113,8 @@ enum Command {
     REMOVEMAP,
     CAPTAIN,
     PICK,
-    LAUNCH,
+    READY,
+    READYLIST,
     UNKNOWN,
 }
 
@@ -113,16 +123,17 @@ impl FromStr for Command {
 
     fn from_str(input: &str) -> Result<Command, Self::Err> {
         match input {
-            "!join" => Ok(Command::JOIN),
-            "!leave" => Ok(Command::LEAVE),
-            "!list" => Ok(Command::LIST),
-            "!start" => Ok(Command::START),
-            "!steamid" => Ok(Command::STEAMID),
-            "!addmap" => Ok(Command::ADDMAP),
-            "!captain" => Ok(Command::CAPTAIN),
-            "!pick" => Ok(Command::PICK),
-            "!launch" => Ok(Command::LAUNCH),
-            "!removemap" => Ok(Command::REMOVEMAP),
+            ".join" => Ok(Command::JOIN),
+            ".leave" => Ok(Command::LEAVE),
+            ".list" => Ok(Command::LIST),
+            ".start" => Ok(Command::START),
+            ".steamid" => Ok(Command::STEAMID),
+            ".addmap" => Ok(Command::ADDMAP),
+            ".captain" => Ok(Command::CAPTAIN),
+            ".pick" => Ok(Command::PICK),
+            ".ready" => Ok(Command::READY),
+            ".readylist" => Ok(Command::READYLIST),
+            ".removemap" => Ok(Command::REMOVEMAP),
             _ => Err(()),
         }
     }
@@ -132,7 +143,7 @@ impl FromStr for Command {
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
-        if !msg.content.starts_with("!") { return; }
+        if !msg.content.starts_with(".") { return; }
         let command = Command::from_str(&msg.content
             .trim()
             .split(" ")
@@ -149,7 +160,8 @@ impl EventHandler for Handler {
             Command::REMOVEMAP => bot_service::handle_remove_map(context, msg).await,
             Command::CAPTAIN => bot_service::handle_captain(context, msg).await,
             Command::PICK => bot_service::handle_pick(context, msg).await,
-            Command::LAUNCH => bot_service::handle_launch_server(context, msg).await,
+            Command::READY => bot_service::handle_ready(context, msg).await,
+            Command::READYLIST => bot_service::handle_ready_list(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }
@@ -172,6 +184,7 @@ async fn main() -> () {
     {
         let mut data = client.data.write().await;
         data.insert::<UserQueue>(Vec::new());
+        data.insert::<ReadyQueue>(Vec::new());
         data.insert::<Config>(config);
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
         data.insert::<BotState>(StateContainer { state: State::Queue });
