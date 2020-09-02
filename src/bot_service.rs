@@ -134,16 +134,16 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " users that are not in the queue cannot start the match", &msg.author).await;
         return;
     }
-    if user_queue.len() != 10 {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" the queue is not full yet")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
-        }
-        return;
-    }
+    // if user_queue.len() != 10 {
+    //     let response = MessageBuilder::new()
+    //         .mention(&msg.author)
+    //         .push(" the queue is not full yet")
+    //         .build();
+    //     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+    //         println!("Error sending message: {:?}", why);
+    //     }
+    //     return;
+    // }
     let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::MapPick;
     let maps: &Vec<String> = &data.get::<Maps>().unwrap();
@@ -281,7 +281,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         let response = MessageBuilder::new()
             .push("Captain pick has concluded. Starting draft phase. ")
             .mention(&draft.current_picker.clone().unwrap())
-            .push(" gets first `.pick @user`")
+            .push(" gets first `.pick @<user>`")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
@@ -298,21 +298,28 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
         return;
     }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     if msg.mentions.len() == 0 {
         send_simple_tagged_msg(&context, &msg, " please mention a discord user in your message.", &msg.author).await;
         return;
     }
     let picked = msg.mentions[0].clone();
+    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().to_vec();
+    if !user_queue.contains(&picked) {
+        send_simple_tagged_msg(&context, &msg, " this user is not in the queue", &msg.author).await;
+        return;
+    }
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     if draft.current_picker.clone().unwrap() != msg.author {
         send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
         return;
     }
+
     if draft.team_a.contains(&draft.current_picker.clone().unwrap()) {
         if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
             send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
             draft.team_a.push(picked);
             draft.current_picker = draft.captain_b.clone();
+            list_unpicked(&user_queue, &draft, &context, &msg).await;
         } else {
             send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
         }
@@ -322,6 +329,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
                 send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
                 draft.team_b.push(picked);
                 draft.current_picker = draft.captain_a.clone();
+                list_unpicked(&user_queue, &draft, &context, &msg).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
             }
@@ -331,6 +339,24 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Live;
         send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` to ready up. Once all players are `.ready` the server will launch.").await;
+    }
+}
+
+pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
+    let mut user_name = String::from("");
+    for user in user_queue {
+        if !draft.team_a.contains(user) || !draft.team_b.contains(user) {
+            user_name.push_str("\n- @");
+            user_name.push_str(&user.name);
+        }
+    }
+    let response = MessageBuilder::new()
+        .push("Remaining players: ")
+        .push(user_name)
+        .build();
+
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
     }
 }
 
