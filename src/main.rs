@@ -10,6 +10,7 @@ use serenity::model::channel::Message;
 use serenity::model::prelude::Ready;
 use serenity::model::user::User;
 use serenity::prelude::{EventHandler, TypeMapKey};
+use serenity::utils::MessageBuilder;
 
 mod bot_service;
 
@@ -79,7 +80,7 @@ impl TypeMapKey for UserQueue {
     type Value = Vec<User>;
 }
 
-impl TypeMapKey for ReadyQueue{
+impl TypeMapKey for ReadyQueue {
     type Value = Vec<User>;
 }
 
@@ -115,6 +116,7 @@ enum Command {
     PICK,
     READY,
     READYLIST,
+    RECOVERQUEUE,
     UNKNOWN,
 }
 
@@ -134,6 +136,7 @@ impl FromStr for Command {
             ".ready" => Ok(Command::READY),
             ".readylist" => Ok(Command::READYLIST),
             ".removemap" => Ok(Command::REMOVEMAP),
+            ".recoverqueue" => Ok(Command::RECOVERQUEUE),
             _ => Err(()),
         }
     }
@@ -143,6 +146,16 @@ impl FromStr for Command {
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
+        if msg.content.starts_with("!") {
+            let response = MessageBuilder::new()
+                .mention(&msg.author)
+                .push(" all commands now start with a period i.e. `.join`")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
+            return;
+        }
         if !msg.content.starts_with(".") { return; }
         let command = Command::from_str(&msg.content
             .trim()
@@ -151,7 +164,7 @@ impl EventHandler for Handler {
             .collect::<Vec<_>>()[0])
             .unwrap_or(Command::UNKNOWN);
         match command {
-            Command::JOIN => bot_service::handle_join(context, msg).await,
+            Command::JOIN => bot_service::handle_join(&context, &msg, &msg.author).await,
             Command::LEAVE => bot_service::handle_leave(context, msg).await,
             Command::LIST => bot_service::handle_list(context, msg).await,
             Command::START => bot_service::handle_start(context, msg).await,
@@ -162,6 +175,7 @@ impl EventHandler for Handler {
             Command::PICK => bot_service::handle_pick(context, msg).await,
             Command::READY => bot_service::handle_ready(context, msg).await,
             Command::READYLIST => bot_service::handle_ready_list(context, msg).await,
+            Command::RECOVERQUEUE => bot_service::handle_recover_queue(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }

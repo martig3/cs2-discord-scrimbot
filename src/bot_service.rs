@@ -16,12 +16,12 @@ struct ReactionResult {
     map: String,
 }
 
-pub(crate) async fn handle_join(context: Context, msg: Message) {
+pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
     let mut data = context.data.write().await;
     let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
-    if !steam_id_cache.contains_key(msg.author.id.as_u64()) {
+    if !steam_id_cache.contains_key(author.id.as_u64()) {
         let response = MessageBuilder::new()
-            .mention(&msg.author)
+            .mention(author)
             .push(" steamID not found for your discord user, \
                     please use `.steamid <your steamID>` to assign one. Example: `.steamid STEAM_0:1:12345678` ")
             .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
@@ -32,9 +32,9 @@ pub(crate) async fn handle_join(context: Context, msg: Message) {
         return;
     }
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
-    if user_queue.contains(&msg.author) {
+    if user_queue.contains(&author) {
         let response = MessageBuilder::new()
-            .mention(&msg.author)
+            .mention(author)
             .push(" is already in the queue.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
@@ -42,9 +42,9 @@ pub(crate) async fn handle_join(context: Context, msg: Message) {
         }
         return;
     }
-    user_queue.push(msg.author.clone());
+    user_queue.push(author.clone());
     let response = MessageBuilder::new()
-        .mention(&msg.author)
+        .mention(author)
         .push(" has been added to the queue. Queue size: ")
         .push(user_queue.len().to_string())
         .push("/10")
@@ -98,6 +98,17 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
+    {
+        let mut data = context.data.write().await;
+        let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+        user_queue.clear();
+    }
+    for mention in &msg.mentions {
+        handle_join(&context, &msg, &mention).await
     }
 }
 
@@ -486,6 +497,8 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
         .map(|s| format!("{},", s))
         .collect();
     team_b_steam_ids.remove(team_b_steam_ids.len());
+    println!("Team A steamids: '{}'", &team_a_steam_ids);
+    println!("Team B steamids: '{}'", &team_b_steam_ids);
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" server is starting...")
