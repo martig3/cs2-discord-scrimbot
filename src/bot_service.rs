@@ -506,7 +506,7 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
         .iter()
         .map(|s| format!("{},", s))
         .collect();
-    team_a_steam_id_str.remove(team_a_steam_id_str.len());
+    team_a_steam_id_str = String::from(&team_a_steam_id_str[..team_a_steam_id_str.len() - 1]);
     let mut team_b_steam_ids: Vec<String> = draft.team_b
         .iter()
         .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
@@ -518,7 +518,7 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
         .iter()
         .map(|s| format!("{},", s))
         .collect();
-    team_b_steam_id_str.remove(team_b_steam_id_str.len());
+    team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
     println!("Team A steamids: '{}'", &team_a_steam_id_str);
     println!("Team B steamids: '{}'", &team_b_steam_id_str);
     let response = MessageBuilder::new()
@@ -538,7 +538,7 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
     let start_match_url = String::from("https://dathost.net/api/0.1/matches");
 
     let resp = client
-        .put(&start_match_url)
+        .post(&start_match_url)
         .form(&[("game_server_id", &server_id),
             ("team1_steam_ids", &&team_a_steam_id_str),
             ("team2_steam_ids", &&team_b_steam_id_str)])
@@ -546,11 +546,15 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
         .send()
         .await
         .unwrap();
-    println!("Start match response - {:#?}", resp);
+    println!("Start match response - {:#?}", &resp);
 
-    let mut steam_web_url = String::from("steam://connect/");
-    steam_web_url.push_str(&config.server.url);
-    send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
+    if resp.status().is_success() {
+        let mut steam_web_url = String::from("steam://connect/");
+        steam_web_url.push_str(&config.server.url);
+        send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
+    } else {
+        send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
+    }
 }
 
 pub(crate) async fn handle_ready(context: Context, msg: Message) {
