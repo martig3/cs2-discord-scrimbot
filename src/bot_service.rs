@@ -32,6 +32,15 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         return;
     }
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+    if user_queue.len() == 10 {
+        let response = MessageBuilder::new()
+            .mention(author)
+            .push(" sorry but the queue is full.")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+    }
     if user_queue.contains(&author) {
         let response = MessageBuilder::new()
             .mention(author)
@@ -102,13 +111,12 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
-    {
-        let mut data = context.data.write().await;
-        let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
-        user_queue.clear();
-    }
+    let mut data = context.data.write().await;
+    let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+    user_queue.clear();
     for mention in &msg.mentions {
-        handle_join(&context, &msg, &mention).await
+        user_queue.push(mention.clone());
+        // handle_join(&context, &msg, &mention).await
     }
 }
 
@@ -261,13 +269,12 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    if &msg.mentions.len() > &2 || &msg.mentions.len() != &0 {
-        if msg.mentions.len() > 2 {
-            send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
-        }
-        if msg.mentions.len() != 0 {
-            send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
-        }
+    if msg.mentions.len() > 2 {
+        send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
+        return;
+    }
+    if msg.mentions.len() != 2 {
+        send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
         return;
     }
     if msg.mentions.len() == 2 {
@@ -279,11 +286,11 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
     } else {
         if draft.captain_a == None {
             send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
-            draft.captain_a = Some(msg.author);
+            draft.captain_a = Some(msg.author.clone());
             draft.team_a.push(draft.captain_a.clone().unwrap());
         } else {
             send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
-            draft.captain_b = Some(msg.author);
+            draft.captain_b = Some(msg.author.clone());
             draft.team_b.push(draft.captain_b.clone().unwrap());
         }
     }
@@ -299,6 +306,9 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         }
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Draft;
+        let user_queue: &Vec<User> = &mut data.get::<UserQueue>().unwrap();
+        let draft: &Draft = &mut data.get::<Draft>().unwrap();
+        list_unpicked(&user_queue, &draft, &context, &msg).await;
     }
 }
 
@@ -309,10 +319,6 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
         return;
     }
-    if msg.mentions.len() == 0 {
-        send_simple_tagged_msg(&context, &msg, " please mention a discord user in your message.", &msg.author).await;
-        return;
-    }
     let picked = msg.mentions[0].clone();
     let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().to_vec();
     if !user_queue.contains(&picked) {
@@ -321,34 +327,39 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     let current_picker = draft.current_picker.clone().unwrap();
-    if draft.current_picker.clone().unwrap() != msg.author {
+    println!("Captain A: {}", draft.captain_a.as_ref().unwrap().name);
+    println!("Captain B: {}", draft.captain_b.as_ref().unwrap().name);
+    if msg.author != *draft.captain_a.as_ref().unwrap() && msg.author != *draft.captain_b.as_ref().unwrap() {
+        send_simple_tagged_msg(&context, &msg, " you are not a captain", &msg.author).await;
+        return;
+    }
+    if current_picker != msg.author {
         send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
         return;
     }
-
-    if draft.team_a.contains(&current_picker) {
-        if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
-            send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
-            draft.team_a.push(picked);
-            draft.current_picker = draft.captain_b.clone();
-            list_unpicked(&user_queue, &draft, &context, &msg).await;
-        } else {
-            send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
-        }
-    } else {
-        if draft.team_b.contains(&current_picker) {
-            if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
-                send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
-                draft.team_b.push(picked);
-                draft.current_picker = draft.captain_a.clone();
-                list_unpicked(&user_queue, &draft, &context, &msg).await;
-            } else {
-                send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
-            }
-        }
+    if msg.mentions.len() == 0 {
+        send_simple_tagged_msg(&context, &msg, " please mention a discord user in your message.", &msg.author).await;
+        return;
     }
-    println!("{:?}", draft.team_a);
-    println!("{:?}", draft.team_b);
+    if draft.team_a.contains(&picked) || draft.team_b.contains(&picked) {
+        send_simple_tagged_msg(&context, &msg, " this player is already on a team", &msg.author).await;
+        return;
+    }
+
+    if draft.captain_a.as_ref().unwrap() == &current_picker {
+        send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
+        draft.team_a.push(picked);
+        draft.current_picker = draft.captain_b.clone();
+        list_unpicked(&user_queue, &draft, &context, &msg).await;
+    } else {
+        send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
+        draft.team_b.push(picked);
+        draft.current_picker = draft.captain_a.clone();
+        list_unpicked(&user_queue, &draft, &context, &msg).await;
+    }
+    println!("Current picker: {}", draft.current_picker.as_ref().unwrap().name);
+    println!("TEAM A: {:?}", draft.team_a);
+    println!("TEAM B: {:?}", draft.team_b);
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Ready;
@@ -359,7 +370,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
 pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
     let mut user_name = String::from("");
     for user in user_queue {
-        if !draft.team_a.contains(user) && !draft.team_b.contains(user) {
+        if !draft.team_a.contains(user) & &!draft.team_b.contains(user) {
             user_name.push_str("\n- @");
             user_name.push_str(&user.name);
         }
@@ -628,9 +639,9 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
-    // I hate this implementation and I deserve to be scolded
-    // in my defense however, you have to provide unicode emojis to the api
-    // if Discord allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
+// I hate this implementation and I deserve to be scolded
+// in my defense however, you have to provide unicode emojis to the api
+// if Discord allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
     let mut map = HashMap::new();
     map.insert('a', String::from("🇦"));
     map.insert('b', String::from("🇧"));
