@@ -60,7 +60,6 @@ enum State {
     CaptainPick,
     Draft,
     Ready,
-    Live,
 }
 
 struct Handler;

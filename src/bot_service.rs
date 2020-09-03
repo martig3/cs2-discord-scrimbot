@@ -548,7 +548,7 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
 
 pub(crate) async fn handle_ready(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &StateContainer = data.get::<BotState>().unwrap();
+    let bot_state: &StateContainer = data.get_mut::<BotState>().unwrap();
     if bot_state.state != State::Ready {
         send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
         return;
@@ -603,6 +603,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         draft.captain_a = None;
         draft.captain_b = None;
         draft.current_picker = None;
+        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::Queue;
     }
 }
 
