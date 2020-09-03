@@ -153,16 +153,16 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " users that are not in the queue cannot start the match", &msg.author).await;
         return;
     }
-    // if user_queue.len() != 10 {
-    //     let response = MessageBuilder::new()
-    //         .mention(&msg.author)
-    //         .push(" the queue is not full yet")
-    //         .build();
-    //     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-    //         println!("Error sending message: {:?}", why);
-    //     }
-    //     return;
-    // }
+    if user_queue.len() != 10 {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" the queue is not full yet")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        return;
+    }
     let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::MapPick;
     let maps: &Vec<String> = &data.get::<Maps>().unwrap();
@@ -269,12 +269,8 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    if msg.mentions.len() > 2 {
-        send_simple_tagged_msg(&context, &msg, ", too many users were tagged. There can only be two captains max.", &msg.author).await;
-        return;
-    }
-    if msg.mentions.len() != 2 {
-        send_simple_tagged_msg(&context, &msg, ", not enough users were tagged. Please tag two users.", &msg.author).await;
+    if msg.mentions.len() > 0 && msg.mentions.len() != 2 {
+        send_simple_tagged_msg(&context, &msg, " please tag two users only to manually set captains.", &msg.author).await;
         return;
     }
     if msg.mentions.len() == 2 {
@@ -563,6 +559,10 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
     if bot_state.state != State::Ready {
         send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
         return;
+    }
+    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap();
+    if !user_queue.contains(&msg.author) {
+        send_simple_tagged_msg(&context, &msg, " you are not in the queue.", &msg.author).await;
     }
     let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
     if ready_queue.contains(&msg.author) {
