@@ -485,20 +485,32 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
     let data = context.data.write().await;
     let draft: &Draft = &data.get::<Draft>().unwrap();
     let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
-    let mut team_a_steam_ids: String = draft.team_a
+    let mut team_a_steam_ids: Vec<String> = draft.team_a
         .iter()
-        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().replacen('0', "1", 1))
+        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
+        .collect();
+    for team_a_steam_id in &mut team_a_steam_ids {
+        team_a_steam_id.replace_range(6..7, "1");
+    }
+    let mut team_a_steam_id_str: String = team_a_steam_ids
+        .iter()
         .map(|s| format!("{},", s))
         .collect();
-    team_a_steam_ids.remove(team_a_steam_ids.len());
-    let mut team_b_steam_ids: String = draft.team_b
+    team_a_steam_id_str.remove(team_a_steam_id_str.len());
+    let mut team_b_steam_ids: Vec<String> = draft.team_b
         .iter()
-        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().replacen('0', "1", 1))
+        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
+        .collect();
+    for team_b_steam_id in &mut team_b_steam_ids {
+        team_b_steam_id.replace_range(6..7, "1");
+    }
+    let mut team_b_steam_id_str: String = team_b_steam_ids
+        .iter()
         .map(|s| format!("{},", s))
         .collect();
-    team_b_steam_ids.remove(team_b_steam_ids.len());
-    println!("Team A steamids: '{}'", &team_a_steam_ids);
-    println!("Team B steamids: '{}'", &team_b_steam_ids);
+    team_b_steam_id_str.remove(team_b_steam_id_str.len());
+    println!("Team A steamids: '{}'", &team_a_steam_id_str);
+    println!("Team B steamids: '{}'", &team_b_steam_id_str);
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" server is starting...")
@@ -518,8 +530,8 @@ pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
     let resp = client
         .put(&start_match_url)
         .form(&[("game_server_id", &server_id),
-            ("team1_steam_ids", &&team_a_steam_ids),
-            ("team2_steam_ids", &&team_b_steam_ids)])
+            ("team1_steam_ids", &&team_a_steam_id_str),
+            ("team2_steam_ids", &&team_b_steam_id_str)])
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await

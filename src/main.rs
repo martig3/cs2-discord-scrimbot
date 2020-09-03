@@ -203,7 +203,13 @@ async fn main() -> () {
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
         data.insert::<BotState>(StateContainer { state: State::Queue });
         data.insert::<Maps>(read_maps().await.unwrap());
-        data.insert::<Draft>(Draft { captain_a: None, captain_b: None, current_picker: None, team_a: Vec::new(), team_b: Vec::new() });
+        data.insert::<Draft>(Draft {
+            captain_a: None,
+            captain_b: None,
+            current_picker: None,
+            team_a: Vec::new(),
+            team_b: Vec::new(),
+        });
     }
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
