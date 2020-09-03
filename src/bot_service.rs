@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use async_std::task;
 use rand::Rng;
+use regex::Regex;
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
 use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue};
-use regex::Regex;
 
 struct ReactionResult {
     count: u64,
@@ -320,12 +320,13 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let current_picker = draft.current_picker.clone().unwrap();
     if draft.current_picker.clone().unwrap() != msg.author {
         send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
         return;
     }
 
-    if draft.team_a.contains(&draft.current_picker.clone().unwrap()) {
+    if draft.team_a.contains(&current_picker) {
         if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
             send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
             draft.team_a.push(picked);
@@ -335,7 +336,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
             send_simple_tagged_msg(&context, &msg, " already is on a team", &picked).await;
         }
     } else {
-        if draft.team_b.contains(&draft.current_picker.clone().unwrap()) {
+        if draft.team_b.contains(&current_picker) {
             if !draft.team_a.contains(&picked) || !draft.team_b.contains(&picked) {
                 send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
                 draft.team_b.push(picked);
@@ -346,9 +347,11 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
             }
         }
     }
+    println!("{:?}", draft.team_a);
+    println!("{:?}", draft.team_b);
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-        bot_state.state = State::Live;
+        bot_state.state = State::Ready;
         send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` to ready up. Once all players are `.ready` the server will launch.").await;
     }
 }
@@ -356,7 +359,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
 pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
     let mut user_name = String::from("");
     for user in user_queue {
-        if !draft.team_a.contains(user) || !draft.team_b.contains(user) {
+        if !draft.team_a.contains(user) && !draft.team_b.contains(user) {
             user_name.push_str("\n- @");
             user_name.push_str(&user.name);
         }
@@ -574,7 +577,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
     if ready_queue.len() == 10 {
         handle_launch_server(&context, &msg).await;
-        let draft: &Draft = &data.get::<Draft>().unwrap();
+        let draft: &Draft = data.get::<Draft>().unwrap();
         let config: &Config = &data.get::<Config>().unwrap();
         for user in &draft.team_a {
             if let Some(guild) = &msg.guild(&context.cache).await {
@@ -594,6 +597,12 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         user_queue.clear();
         let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
         ready_queue.clear();
+        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+        draft.team_a = vec![];
+        draft.team_b = vec![];
+        draft.captain_a = None;
+        draft.captain_b = None;
+        draft.current_picker = None;
     }
 }
 
