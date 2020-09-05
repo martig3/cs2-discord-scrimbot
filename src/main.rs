@@ -1,6 +1,9 @@
+use core::time::Duration as CoreDuration;
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use async_std::task;
+use chrono::{Datelike, DateTime, Duration as ChronoDuration, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serenity::async_trait;
 use serenity::Client;
@@ -19,6 +22,7 @@ struct Config {
     server: ServerConfig,
     dathost: DathostConfig,
     discord: DiscordConfig,
+    autoclear_hour: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,6 +40,7 @@ struct DathostConfig {
 #[derive(Serialize, Deserialize)]
 struct DiscordConfig {
     token: String,
+    admin_role_id: u64,
     team_a_channel_id: u64,
     team_b_channel_id: u64,
 }
@@ -116,6 +121,8 @@ enum Command {
     READY,
     READYLIST,
     RECOVERQUEUE,
+    CLEAR,
+    HELP,
     UNKNOWN,
 }
 
@@ -136,6 +143,8 @@ impl FromStr for Command {
             ".readylist" => Ok(Command::READYLIST),
             ".removemap" => Ok(Command::REMOVEMAP),
             ".recoverqueue" => Ok(Command::RECOVERQUEUE),
+            ".clear" => Ok(Command::CLEAR),
+            ".help" => Ok(Command::HELP),
             _ => Err(()),
         }
     }
@@ -175,11 +184,14 @@ impl EventHandler for Handler {
             Command::READY => bot_service::handle_ready(context, msg).await,
             Command::READYLIST => bot_service::handle_ready_list(context, msg).await,
             Command::RECOVERQUEUE => bot_service::handle_recover_queue(context, msg).await,
+            Command::CLEAR => bot_service::handle_clear(context, msg).await,
+            Command::HELP => bot_service::handle_help(context, msg).await,
             Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
         }
     }
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, context: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
+        autoclear_queue(&context).await;
     }
 }
 
@@ -239,4 +251,29 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
     } else {
         Ok(Vec::new())
     }
+}
+
+async fn autoclear_queue(context: &Context) {
+    println!("Starting autoclear feature...");
+    loop {
+        let autoclear_hour = get_autoclear_hour(context).await;
+        let current: DateTime<Local> = Local::now();
+        let mut autoclear: DateTime<Local> = Local.ymd(current.year(), current.month(), current.day())
+            .and_hms(autoclear_hour, 0, 0);
+        if autoclear.signed_duration_since(current).num_milliseconds() < 0 { autoclear = autoclear + ChronoDuration::days(1) }
+        let time_between: ChronoDuration = autoclear.signed_duration_since(current);
+        println!("Hours until autoclear: {}", time_between.num_hours());
+        task::sleep(CoreDuration::from_millis(time_between.num_milliseconds() as u64)).await;
+        {
+            let mut data = context.data.write().await;
+            let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+            user_queue.clear();
+        }
+    }
+}
+
+async fn get_autoclear_hour(client: &Context) -> u32 {
+    let data = client.data.write().await;
+    let config: &Config = &data.get::<Config>().unwrap();
+    return config.autoclear_hour;
 }

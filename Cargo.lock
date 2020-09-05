@@ -1225,6 +1225,7 @@ name = "rust-dathost-scrimbot"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "chrono",
  "rand",
  "regex",
  "reqwest",

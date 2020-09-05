@@ -6,6 +6,8 @@ use rand::Rng;
 use regex::Regex;
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
+use serenity::model::guild::GuildContainer;
+use serenity::model::id::GuildId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
@@ -110,13 +112,54 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
+pub(crate) async fn handle_clear(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
     user_queue.clear();
+    let response = MessageBuilder::new()
+        .mention(&msg.author)
+        .push(" cleared queue")
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_help(context: Context, msg: Message) {
+    let commands = String::from("\
+`.join` - Join the queue
+`.leave` - Leave the queue
+`.list` - List all users in the queue
+`.start` - Start the match setup process
+`.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
+`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
+`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
+`.recoverqueue` - Manually set a queue, tag all users to add after the command
+`.clear` - Clear the queue
+\n_These are commands used during the `.start` process:_
+`.captain` - Add yourself as a captain. Tag two users to manually set captains.
+`.pick` - If you are a captain, this is used to pick a player
+`.ready` - After the draft phase is completed, use this to ready up
+`.readylist` - Lists players not readied up
+");
+    let response = MessageBuilder::new()
+        .push(commands)
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+}
+
+pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
+    {
+        let mut data = context.data.write().await;
+        let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+        user_queue.clear();
+    }
     for mention in &msg.mentions {
-        user_queue.push(mention.clone());
-        // handle_join(&context, &msg, &mention).await
+        handle_join(&context, &msg, &mention).await
     }
 }
 
@@ -274,6 +317,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     if msg.mentions.len() == 2 {
+        if !admin_check(&context, &msg).await { return; }
         draft.captain_a = Some(msg.mentions[0].clone());
         draft.captain_b = Some(msg.mentions[1].clone());
         draft.team_a.push(draft.captain_a.clone().unwrap());
@@ -411,6 +455,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     if maps.len() == 26 {
@@ -448,6 +493,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
@@ -642,10 +688,28 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
     }
 }
 
+pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
+    let data = context.data.write().await;
+    let config: &Config = data.get::<Config>().unwrap();
+    let role_name = context.cache.role(GuildId::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap().name;
+    return if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) { true } else {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" this command requires the '")
+            .push(role_name)
+            .push("' role.")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+        false
+    };
+}
+
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
 // I hate this implementation and I deserve to be scolded
 // in my defense however, you have to provide unicode emojis to the api
-// if Discord allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
+// if Discord's API allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
     let mut map = HashMap::new();
     map.insert('a', String::from("🇦"));
     map.insert('b', String::from("🇧"));
