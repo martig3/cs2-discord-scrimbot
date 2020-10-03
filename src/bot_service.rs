@@ -165,40 +165,6 @@ pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn handle_force_launch(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
-    let mut data = context.data.write().await;
-    handle_launch_server(&context, &msg).await;
-    let draft: &Draft = data.get::<Draft>().unwrap();
-    let config: &Config = &data.get::<Config>().unwrap();
-    for user in &draft.team_a {
-        if let Some(guild) = &msg.guild(&context.cache).await {
-            if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_a_channel_id).await {
-                println!("Cannot move user: {:?}", why);
-            }
-        }
-    }
-    for user in &draft.team_b {
-        if let Some(guild) = &msg.guild(&context.cache).await {
-            if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_b_channel_id).await {
-                println!("Cannot move user: {:?}", why);
-            }
-        }
-    }
-    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-    user_queue.clear();
-    let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
-    ready_queue.clear();
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    draft.team_a = vec![];
-    draft.team_b = vec![];
-    draft.captain_a = None;
-    draft.captain_b = None;
-    draft.current_picker = None;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::Queue;
-}
-
 pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let ready_queue: &Vec<User> = data.get::<ReadyQueue>().unwrap();
@@ -573,73 +539,6 @@ pub(crate) async fn write_to_file(path: String, content: String) {
         .expect(&error_string);
 }
 
-pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
-    println!("Launching server...");
-    let data = context.data.write().await;
-    let draft: &Draft = &data.get::<Draft>().unwrap();
-    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
-    let mut team_a_steam_ids: Vec<String> = draft.team_a
-        .iter()
-        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
-        .collect();
-    for team_a_steam_id in &mut team_a_steam_ids {
-        team_a_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_a_steam_id_str: String = team_a_steam_ids
-        .iter()
-        .map(|s| format!("{},", s))
-        .collect();
-    team_a_steam_id_str = String::from(&team_a_steam_id_str[..team_a_steam_id_str.len() - 1]);
-    let mut team_b_steam_ids: Vec<String> = draft.team_b
-        .iter()
-        .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
-        .collect();
-    for team_b_steam_id in &mut team_b_steam_ids {
-        team_b_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_b_steam_id_str: String = team_b_steam_ids
-        .iter()
-        .map(|s| format!("{},", s))
-        .collect();
-    team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
-    println!("Team A steamids: '{}'", &team_a_steam_id_str);
-    println!("Team B steamids: '{}'", &team_b_steam_id_str);
-    let response = MessageBuilder::new()
-        .mention(&msg.author)
-        .push(" server is starting...")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
-
-    let config: &Config = data.get::<Config>().unwrap();
-    let client = reqwest::Client::new();
-    let dathost_username = &config.dathost.username;
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let server_id = &config.server.id;
-
-    let start_match_url = String::from("https://dathost.net/api/0.1/matches");
-
-    let resp = client
-        .post(&start_match_url)
-        .form(&[("game_server_id", &server_id),
-            ("team1_steam_ids", &&team_a_steam_id_str),
-            ("team2_steam_ids", &&team_b_steam_id_str)])
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-        .unwrap();
-    println!("Start match response - {:#?}", &resp);
-
-    if resp.status().is_success() {
-        let mut steam_web_url = String::from("steam://connect/");
-        steam_web_url.push_str(&config.server.url);
-        send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
-    } else {
-        send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
-    }
-}
-
 pub(crate) async fn handle_ready(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get_mut::<BotState>().unwrap();
@@ -676,7 +575,69 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
     println!("ready_queue length: {}", ready_queue.len());
     if ready_queue.len() >= 10 {
-        handle_launch_server(&context, &msg).await;
+        println!("Launching server...");
+        let draft: &Draft = &data.get::<Draft>().unwrap();
+        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+        let mut team_a_steam_ids: Vec<String> = draft.team_a
+            .iter()
+            .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
+            .collect();
+        for team_a_steam_id in &mut team_a_steam_ids {
+            team_a_steam_id.replace_range(6..7, "1");
+        }
+        let mut team_a_steam_id_str: String = team_a_steam_ids
+            .iter()
+            .map(|s| format!("{},", s))
+            .collect();
+        team_a_steam_id_str = String::from(&team_a_steam_id_str[..team_a_steam_id_str.len() - 1]);
+        let mut team_b_steam_ids: Vec<String> = draft.team_b
+            .iter()
+            .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
+            .collect();
+        for team_b_steam_id in &mut team_b_steam_ids {
+            team_b_steam_id.replace_range(6..7, "1");
+        }
+        let mut team_b_steam_id_str: String = team_b_steam_ids
+            .iter()
+            .map(|s| format!("{},", s))
+            .collect();
+        team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
+        println!("Team A steamids: '{}'", &team_a_steam_id_str);
+        println!("Team B steamids: '{}'", &team_b_steam_id_str);
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" server is starting...")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+
+        let config: &Config = data.get::<Config>().unwrap();
+        let client = reqwest::Client::new();
+        let dathost_username = &config.dathost.username;
+        let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+        let server_id = &config.server.id;
+
+        let start_match_url = String::from("https://dathost.net/api/0.1/matches");
+
+        let resp = client
+            .post(&start_match_url)
+            .form(&[("game_server_id", &server_id),
+                ("team1_steam_ids", &&team_a_steam_id_str),
+                ("team2_steam_ids", &&team_b_steam_id_str)])
+            .basic_auth(&dathost_username, dathost_password)
+            .send()
+            .await
+            .unwrap();
+        println!("Start match response - {:#?}", &resp);
+
+        if resp.status().is_success() {
+            let mut steam_web_url = String::from("steam://connect/");
+            steam_web_url.push_str(&config.server.url);
+            send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
+        } else {
+            send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
+        }
         let draft: &Draft = data.get::<Draft>().unwrap();
         let config: &Config = &data.get::<Config>().unwrap();
         for user in &draft.team_a {
