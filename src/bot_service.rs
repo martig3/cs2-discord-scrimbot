@@ -165,6 +165,7 @@ pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
 
 pub(crate) async fn handle_force_launch(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
+    let mut data = context.data.write().await;
     handle_launch_server(&context, &msg).await;
     let draft: &Draft = data.get::<Draft>().unwrap();
     let config: &Config = &data.get::<Config>().unwrap();
