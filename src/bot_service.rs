@@ -34,7 +34,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         return;
     }
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
-    if user_queue.len() == 10 {
+    if user_queue.len() >= 10 {
         let response = MessageBuilder::new()
             .mention(author)
             .push(" sorry but the queue is full.")
@@ -42,6 +42,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
+        return;
     }
     if user_queue.contains(&author) {
         let response = MessageBuilder::new()
@@ -141,6 +142,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.captain` - Add yourself as a captain. Tag two users to manually set captains.
 `.pick` - If you are a captain, this is used to pick a player
 `.ready` - After the draft phase is completed, use this to ready up
+`.unready` - After the draft phase is completed, use this to cancel your `.ready` status
 `.readylist` - Lists players not readied up
 ");
     let response = MessageBuilder::new()
@@ -648,6 +650,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
     let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap();
     if !user_queue.contains(&msg.author) {
         send_simple_tagged_msg(&context, &msg, " you are not in the queue.", &msg.author).await;
+        return;
     }
     let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
     if ready_queue.contains(&msg.author) {
@@ -672,7 +675,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
     }
 
     println!("ready_queue length: {}", ready_queue.len());
-    if ready_queue.len() == 10 {
+    if ready_queue.len() >= 10 {
         handle_launch_server(&context, &msg).await;
         let draft: &Draft = data.get::<Draft>().unwrap();
         let config: &Config = &data.get::<Config>().unwrap();
@@ -703,6 +706,24 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Queue;
     }
+}
+
+pub(crate) async fn handle_unready(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let bot_state: &StateContainer = data.get_mut::<BotState>().unwrap();
+    if bot_state.state != State::Ready {
+        send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
+        return;
+    }
+    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap();
+    if !user_queue.contains(&msg.author) {
+        send_simple_tagged_msg(&context, &msg, " you are not in the queue.", &msg.author).await;
+        return;
+    }
+    let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
+    let index = ready_queue.iter().position(|r| r.id == msg.author.id).unwrap();
+    ready_queue.remove(index);
+    send_simple_tagged_msg(&context, &msg, " is no longer `.ready`.", &msg.author).await;
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
