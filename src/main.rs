@@ -144,7 +144,7 @@ impl FromStr for Command {
             ".readylist" => Ok(Command::READYLIST),
             ".removemap" => Ok(Command::REMOVEMAP),
             ".recoverqueue" => Ok(Command::RECOVERQUEUE),
-            ".forcelaunch" => Ok(Command::RECOVERQUEUE),
+            ".forcelaunch" => Ok(Command::FORCELAUNCH),
             ".clear" => Ok(Command::CLEAR),
             ".help" => Ok(Command::HELP),
             _ => Err(()),
