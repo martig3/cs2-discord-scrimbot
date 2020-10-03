@@ -163,6 +163,39 @@ pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
     }
 }
 
+pub(crate) async fn handle_force_launch(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
+    handle_launch_server(&context, &msg).await;
+    let draft: &Draft = data.get::<Draft>().unwrap();
+    let config: &Config = &data.get::<Config>().unwrap();
+    for user in &draft.team_a {
+        if let Some(guild) = &msg.guild(&context.cache).await {
+            if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_a_channel_id).await {
+                println!("Cannot move user: {:?}", why);
+            }
+        }
+    }
+    for user in &draft.team_b {
+        if let Some(guild) = &msg.guild(&context.cache).await {
+            if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_b_channel_id).await {
+                println!("Cannot move user: {:?}", why);
+            }
+        }
+    }
+    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+    user_queue.clear();
+    let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
+    ready_queue.clear();
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    draft.team_a = vec![];
+    draft.team_b = vec![];
+    draft.captain_a = None;
+    draft.captain_b = None;
+    draft.current_picker = None;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::Queue;
+}
+
 pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let ready_queue: &Vec<User> = data.get::<ReadyQueue>().unwrap();
@@ -538,6 +571,7 @@ pub(crate) async fn write_to_file(path: String, content: String) {
 }
 
 pub(crate) async fn handle_launch_server(context: &Context, msg: &Message) {
+    println!("Launching server...");
     let data = context.data.write().await;
     let draft: &Draft = &data.get::<Draft>().unwrap();
     let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
@@ -636,6 +670,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Error sending message: {:?}", why);
     }
 
+    println!("ready_queue length: {}", ready_queue.len());
     if ready_queue.len() == 10 {
         handle_launch_server(&context, &msg).await;
         let draft: &Draft = data.get::<Draft>().unwrap();
