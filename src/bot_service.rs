@@ -140,7 +140,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.recoverqueue` - Manually set a queue, tag all users to add after the command
 `.clear` - Clear the queue
 \n_These are commands used during the `.start` process:_
-`.captain` - Add yourself as a captain. Tag two users to manually set captains.
+`.captain` - Add yourself as a captain.
 `.pick` - If you are a captain, this is used to pick a player
 `.ready` - After the draft phase is completed, use this to ready up
 `.unready` - After the draft phase is completed, use this to cancel your `.ready` status
@@ -329,27 +329,14 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    if msg.mentions.len() > 0 && msg.mentions.len() != 2 {
-        send_simple_tagged_msg(&context, &msg, " please tag two users only to manually set captains.", &msg.author).await;
-        return;
-    }
-    if msg.mentions.len() == 2 {
-        if !admin_check(&context, &msg).await { return; }
-        draft.captain_a = Some(msg.mentions[0].clone());
-        draft.captain_b = Some(msg.mentions[1].clone());
+    if draft.captain_a == None {
+        send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
+        draft.captain_a = Some(msg.author.clone());
         draft.team_a.push(draft.captain_a.clone().unwrap());
-        draft.team_b.push(draft.captain_b.clone().unwrap());
-        send_simple_msg(&context, &msg, "Captains set manually.").await;
     } else {
-        if draft.captain_a == None {
-            send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
-            draft.captain_a = Some(msg.author.clone());
-            draft.team_a.push(draft.captain_a.clone().unwrap());
-        } else {
-            send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
-            draft.captain_b = Some(msg.author.clone());
-            draft.team_b.push(draft.captain_b.clone().unwrap());
-        }
+        send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
+        draft.captain_b = Some(msg.author.clone());
+        draft.team_b.push(draft.captain_b.clone().unwrap());
     }
     if draft.captain_a != None && draft.captain_b != None {
         draft.current_picker = draft.captain_a.clone();
