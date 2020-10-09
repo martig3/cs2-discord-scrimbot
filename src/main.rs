@@ -263,7 +263,7 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
 }
 
 async fn autoclear_queue(context: &Context) {
-    println!("Starting autoclear feature...");
+    println!("Autoclear feature started");
     loop {
         let autoclear_hour = get_autoclear_hour(context).await;
         let current: DateTime<Local> = Local::now();
@@ -271,7 +271,6 @@ async fn autoclear_queue(context: &Context) {
             .and_hms(autoclear_hour, 0, 0);
         if autoclear.signed_duration_since(current).num_milliseconds() < 0 { autoclear = autoclear + ChronoDuration::days(1) }
         let time_between: ChronoDuration = autoclear.signed_duration_since(current);
-        println!("Hours until autoclear: {}", time_between.num_hours());
         task::sleep(CoreDuration::from_millis(time_between.num_milliseconds() as u64)).await;
         {
             let mut data = context.data.write().await;
