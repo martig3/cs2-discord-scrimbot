@@ -117,6 +117,7 @@ enum Command {
     MAPS,
     ADDMAP,
     REMOVEMAP,
+    KICK,
     CAPTAIN,
     PICK,
     READY,
@@ -139,6 +140,7 @@ impl FromStr for Command {
             ".start" => Ok(Command::START),
             ".steamid" => Ok(Command::STEAMID),
             ".maps" => Ok(Command::MAPS),
+            ".kick" => Ok(Command::KICK),
             ".addmap" => Ok(Command::ADDMAP),
             ".captain" => Ok(Command::CAPTAIN),
             ".pick" => Ok(Command::PICK),
@@ -158,7 +160,7 @@ impl FromStr for Command {
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
-        if msg.content.starts_with("!") {
+        if msg.content.starts_with('!') {
             let response = MessageBuilder::new()
                 .mention(&msg.author)
                 .push(" all commands now start with a period i.e. `.join`")
@@ -168,10 +170,10 @@ impl EventHandler for Handler {
             }
             return;
         }
-        if !msg.content.starts_with(".") { return; }
-        let command = Command::from_str(&msg.content
+        if !msg.content.starts_with('.') { return; }
+        let command = Command::from_str(&msg.content.to_lowercase()
             .trim()
-            .split(" ")
+            .split(' ')
             .take(1)
             .collect::<Vec<_>>()[0])
             .unwrap_or(Command::UNKNOWN);
@@ -182,6 +184,7 @@ impl EventHandler for Handler {
             Command::START => bot_service::handle_start(context, msg).await,
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::MAPS => bot_service::handle_map_list(context, msg).await,
+            Command::KICK => bot_service::handle_kick(context, msg).await,
             Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
             Command::REMOVEMAP => bot_service::handle_remove_map(context, msg).await,
             Command::CAPTAIN => bot_service::handle_captain(context, msg).await,
