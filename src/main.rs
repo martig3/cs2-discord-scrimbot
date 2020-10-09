@@ -55,6 +55,7 @@ struct Draft {
     captain_b: Option<User>,
     team_a: Vec<User>,
     team_b: Vec<User>,
+    team_b_start_side: String,
     current_picker: Option<User>,
 }
 
@@ -64,6 +65,7 @@ enum State {
     MapPick,
     CaptainPick,
     Draft,
+    SidePick,
     Ready,
 }
 
@@ -122,6 +124,8 @@ enum Command {
     PICK,
     READY,
     UNREADY,
+    CT,
+    T,
     READYLIST,
     RECOVERQUEUE,
     CLEAR,
@@ -146,6 +150,8 @@ impl FromStr for Command {
             ".pick" => Ok(Command::PICK),
             ".ready" => Ok(Command::READY),
             ".unready" => Ok(Command::UNREADY),
+            ".ct" => Ok(Command::CT),
+            ".t" => Ok(Command::T),
             ".readylist" => Ok(Command::READYLIST),
             ".removemap" => Ok(Command::REMOVEMAP),
             ".recoverqueue" => Ok(Command::RECOVERQUEUE),
@@ -191,6 +197,8 @@ impl EventHandler for Handler {
             Command::PICK => bot_service::handle_pick(context, msg).await,
             Command::READY => bot_service::handle_ready(context, msg).await,
             Command::UNREADY => bot_service::handle_unready(context, msg).await,
+            Command::CT => bot_service::handle_ct_option(context, msg).await,
+            Command::T => bot_service::handle_t_option(context, msg).await,
             Command::READYLIST => bot_service::handle_ready_list(context, msg).await,
             Command::RECOVERQUEUE => bot_service::handle_recover_queue(context, msg).await,
             Command::CLEAR => bot_service::handle_clear(context, msg).await,
@@ -229,6 +237,7 @@ async fn main() -> () {
             current_picker: None,
             team_a: Vec::new(),
             team_b: Vec::new(),
+            team_b_start_side: String::from("")
         });
     }
     if let Err(why) = client.start().await {

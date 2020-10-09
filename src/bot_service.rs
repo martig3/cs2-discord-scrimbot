@@ -400,9 +400,10 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         list_unpicked(&user_queue, &draft, &context, &msg).await;
     }
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
+        let captain_b = draft.captain_b.clone().unwrap();
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
-        bot_state.state = State::Ready;
-        send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server will and match will immediately start.").await;
+        bot_state.state = State::SidePick;
+        send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
     }
 }
 
@@ -439,6 +440,42 @@ pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         println!("Error sending message: {:?}", why);
     }
+}
+
+pub(crate) async fn handle_ct_option(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    if bot_state.state != State::SidePick {
+        send_simple_tagged_msg(&context, &msg, " it is not currently the side pick phase", &msg.author).await;
+        return;
+    }
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if &msg.author != draft.captain_b.as_ref().unwrap() {
+        send_simple_tagged_msg(&context, &msg, " you are not Captain B", &msg.author).await;
+        return;
+    }
+    draft.team_b_start_side = String::from("ct");
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::Ready;
+    send_simple_msg(&context, &msg, "Setup is completed. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server and match will immediately start.").await;
+}
+
+pub(crate) async fn handle_t_option(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    if bot_state.state != State::SidePick {
+        send_simple_tagged_msg(&context, &msg, " it is not currently the side pick phase", &msg.author).await;
+        return;
+    }
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if &msg.author != draft.captain_b.as_ref().unwrap() {
+        send_simple_tagged_msg(&context, &msg, " you are not Captain B", &msg.author).await;
+        return;
+    }
+    draft.team_b_start_side = String::from("t");
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::Ready;
+    send_simple_msg(&context, &msg, "Setup is completed. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server and match will immediately start.").await;
 }
 
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
@@ -665,6 +702,15 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
         }
+        let team_ct: String;
+        let team_t: String;
+        if draft.team_b_start_side == "ct" {
+            team_ct = team_b_steam_id_str;
+            team_t = team_a_steam_id_str;
+        } else {
+            team_ct = team_a_steam_id_str;
+            team_t = team_b_steam_id_str;
+        }
 
         let config: &Config = data.get::<Config>().unwrap();
         let client = reqwest::Client::new();
@@ -677,8 +723,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
-                ("team1_steam_ids", &&team_a_steam_id_str),
-                ("team2_steam_ids", &&team_b_steam_id_str)])
+                ("team1_steam_ids", &&team_ct),
+                ("team2_steam_ids", &&team_t)])
             .basic_auth(&dathost_username, dathost_password)
             .send()
             .await
