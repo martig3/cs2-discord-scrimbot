@@ -283,5 +283,5 @@ async fn autoclear_queue(context: &Context) {
 async fn get_autoclear_hour(client: &Context) -> u32 {
     let data = client.data.write().await;
     let config: &Config = &data.get::<Config>().unwrap();
-    return config.autoclear_hour;
+    config.autoclear_hour
 }

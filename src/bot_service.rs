@@ -458,7 +458,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
     let split_content = msg.content.trim().split(' ').take(2).collect::<Vec<_>>();
-    if split_content.len()== 1 {
+    if split_content.len() == 1 {
         send_simple_tagged_msg(&context, &msg, " please check the command formatting. There must be a space in between `.steamid` and your steamid. \
         Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
         return;
@@ -777,7 +777,9 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
-    return if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) { true } else {
+    if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
+        true
+    } else {
         let response = MessageBuilder::new()
             .mention(&msg.author)
             .push(" this command requires the '")
@@ -788,7 +790,7 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
             println!("Error sending message: {:?}", why);
         }
         false
-    };
+    }
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
@@ -822,5 +824,5 @@ pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
     map.insert('x', String::from("🇽"));
     map.insert('y', String::from("🇾"));
     map.insert('z', String::from("🇿"));
-    return map;
+    map
 }
