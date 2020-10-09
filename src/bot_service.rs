@@ -133,6 +133,8 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.list` - List all users in the queue
 `.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
+`.maps` - Lists all maps in available for play
+`.kick` - Kick a player by mentioning them i.e. `.kick @user`
 `.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
 `.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
 `.recoverqueue` - Manually set a queue, tag all users to add after the command
@@ -327,7 +329,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
-    if msg.mentions.is_empty() && msg.mentions.len() != 2 {
+    if msg.mentions.len() > 0 && msg.mentions.len() != 2 {
         send_simple_tagged_msg(&context, &msg, " please tag two users only to manually set captains.", &msg.author).await;
         return;
     }
@@ -413,7 +415,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Ready;
-        send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` to ready up. Once all players are `.ready` the server will launch.").await;
+        send_simple_msg(&context, &msg, "Draft has concluded. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server will and match will immediately start.").await;
     }
 }
 
