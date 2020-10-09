@@ -338,8 +338,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         draft.team_a.push(draft.captain_a.clone().unwrap());
         draft.team_b.push(draft.captain_b.clone().unwrap());
         send_simple_msg(&context, &msg, "Captains set manually.").await;
-    } else {
-        if draft.captain_a == None {
+    } else if draft.captain_a == None {
             send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
             draft.captain_a = Some(msg.author.clone());
             draft.team_a.push(draft.captain_a.clone().unwrap());
@@ -348,7 +347,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
             draft.captain_b = Some(msg.author.clone());
             draft.team_b.push(draft.captain_b.clone().unwrap());
         }
-    }
+
     if draft.captain_a != None && draft.captain_b != None {
         draft.current_picker = draft.captain_a.clone();
         let response = MessageBuilder::new()
@@ -456,7 +455,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
     let split_content = msg.content.trim().split(' ').take(2).collect::<Vec<_>>();
-    if split_content.len()== 1 {
+    if split_content.len() == 1 {
         send_simple_tagged_msg(&context, &msg, " please check the command formatting. There must be a space in between `.steamid` and your steamid. \
         Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
         return;
@@ -539,7 +538,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
         }
         return;
     }
-    let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    let map_name: String = String::from(msg.content.trim().split(' ').take(2).collect::<Vec<_>>()[1]);
     if maps.contains(&map_name) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
@@ -567,7 +566,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
-    let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    let map_name: String = String::from(msg.content.trim().split(' ').take(2).collect::<Vec<_>>()[1]);
     if !maps.contains(&map_name) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
@@ -777,7 +776,9 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
-    return if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) { true } else {
+    if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
+        true
+    } else {
         let response = MessageBuilder::new()
             .mention(&msg.author)
             .push(" this command requires the '")
@@ -788,7 +789,7 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
             println!("Error sending message: {:?}", why);
         }
         false
-    };
+    }
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
@@ -822,5 +823,5 @@ pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
     map.insert('x', String::from("🇽"));
     map.insert('y', String::from("🇾"));
     map.insert('z', String::from("🇿"));
-    return map;
+    map
 }
