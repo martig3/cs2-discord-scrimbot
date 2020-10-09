@@ -242,11 +242,14 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
     let mut results: Vec<ReactionResult> = Vec::new();
     for reaction in updated_vote_msg.reactions {
-        let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
-        results.push(ReactionResult {
-            count: reaction.count,
-            map,
-        });
+        let react_as_map: Option<&String> = unicode_to_maps.get(reaction.reaction_type.to_string().as_str());
+        if react_as_map != None {
+            let map = String::from(react_as_map.unwrap());
+            results.push(ReactionResult {
+                count: reaction.count,
+                map,
+            });
+        }
     }
     let max_count = results
         .iter()
@@ -456,11 +459,28 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     }
 }
 
+pub(crate) async fn handle_map_list(context: Context, msg: Message) {
+    let data = context.data.write().await;
+    let maps: &Vec<String> = data.get::<Maps>().unwrap();
+    let mut map_str = String::new();
+    for m in maps {
+        map_str.push_str(format!("- `{}`\n", m).as_ref());
+    }
+    let response = MessageBuilder::new()
+        .push_line("Current map pool:")
+        .push(map_str)
+        .build();
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        println!("Error sending message: {:?}", why);
+    }
+    return;
+}
+
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
-    if maps.len() == 26 {
+    if maps.len() >= 26 {
         let response = MessageBuilder::new()
             .mention(&msg.author)
             .push(" unable to add map, max amount reached.")
@@ -573,7 +593,6 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Error sending message: {:?}", why);
     }
 
-    println!("ready_queue length: {}", ready_queue.len());
     if ready_queue.len() >= 10 {
         println!("Launching server...");
         let draft: &Draft = &data.get::<Draft>().unwrap();
@@ -605,8 +624,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Team A steamids: '{}'", &team_a_steam_id_str);
         println!("Team B steamids: '{}'", &team_b_steam_id_str);
         let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" server is starting...")
+            .push("All players are ready. Server is starting...")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
