@@ -263,7 +263,7 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
 }
 
 async fn autoclear_queue(context: &Context) {
-    println!("Starting autoclear feature...");
+    println!("Started autoclear feature");
     loop {
         let autoclear_hour = get_autoclear_hour(context).await;
         let current: DateTime<Local> = Local::now();
