@@ -94,15 +94,10 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
 pub(crate) async fn handle_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    let mut user_name = String::from("");
-    for user in user_queue {
-        user_name.push_str("\n- @");
-        user_name.push_str(&user.name);
-    }
-    let queue_len = &user_queue.len();
+    let user_name: String = user_queue.iter().map(|user| format!("\n- @{}", user.name)).collect();
     let response = MessageBuilder::new()
         .push("Current queue size: ")
-        .push(queue_len)
+        .push(&user_queue.len())
         .push("/10")
         .push(user_name)
         .build();
@@ -145,6 +140,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.ready` - After the draft phase is completed, use this to ready up
 `.unready` - After the draft phase is completed, use this to cancel your `.ready` status
 `.readylist` - Lists players not readied up
+`.cancel` - Cancels `.start` process
 ");
     let response = MessageBuilder::new()
         .push(commands)
@@ -170,13 +166,11 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let ready_queue: &Vec<User> = data.get::<ReadyQueue>().unwrap();
     let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    let mut user_name = String::from("");
-    for user in user_queue {
-        if !ready_queue.contains(user) {
-            user_name.push_str("\n- @");
-            user_name.push_str(&user.name);
-        }
-    }
+    let user_name: String = user_queue
+        .iter()
+        .filter(|user| !ready_queue.contains(user))
+        .map(|user| format!("\n- @{}", user.name))
+        .collect();
     let response = MessageBuilder::new()
         .push("Players that are not `.ready`:")
         .push(user_name)
@@ -209,10 +203,10 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         }
         return;
     }
-    let mut user_queue_mention = String::from("");
-    for user in user_queue {
-        user_queue_mention.push_str(format!("- <@{}>\n", user.id).as_ref())
-    }
+    let user_queue_mention: String = user_queue
+        .iter()
+        .map(|user| format!("- <@{}>\n", user.id))
+        .collect();
     let response = MessageBuilder::new()
         .push(user_queue_mention)
         .push_bold_line("Scrim setup is starting...")
@@ -300,8 +294,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let mut update_map_url = String::from("https://dathost.net/api/0.1/game-servers/");
-    update_map_url.push_str(&config.server.id);
+    let update_map_url = format!("https://dathost.net/api/0.1/game-servers/{}", &config.server.id);
     let resp = client
         .put(&update_map_url)
         .form(&[("csgo_settings.mapgroup_start_map", &selected_map)])
@@ -408,33 +401,26 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
 }
 
 pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
-    let mut user_name = String::from("");
-    for user in user_queue {
-        if !draft.team_a.contains(user) && !draft.team_b.contains(user) {
-            user_name.push_str("- @");
-            user_name.push_str(&user.name);
-            user_name.push_str("\n");
-        }
-    }
-    let mut team_a = String::from("");
-    for user in &draft.team_a {
-        team_a.push_str("- @");
-        team_a.push_str(&user.name);
-        team_a.push_str("\n");
-    }
-    let mut team_b = String::from("");
-    for user in &draft.team_b {
-        team_b.push_str("- @");
-        team_b.push_str(&user.name);
-        team_b.push_str("\n");
-    }
+    let remaining_users: String = user_queue
+        .iter()
+        .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let team_a: String = draft.team_a
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let team_b: String = draft.team_b
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
     let response = MessageBuilder::new()
         .push_bold_line("Team A:")
         .push_line(team_a)
         .push_bold_line("Team B:")
         .push_line(team_b)
         .push_bold_line("Remaining players: ")
-        .push_line(user_name)
+        .push_line(remaining_users)
         .build();
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
@@ -510,10 +496,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
 pub(crate) async fn handle_map_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let maps: &Vec<String> = data.get::<Maps>().unwrap();
-    let mut map_str = String::new();
-    for m in maps {
-        map_str.push_str(format!("- `{}`\n", m).as_ref());
-    }
+    let map_str: String = maps.iter().map(|map| format!("- `{}`\n", map)).collect();
     let response = MessageBuilder::new()
         .push_line("Current map pool:")
         .push(map_str)
@@ -732,8 +715,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Start match response - {:#?}", &resp);
 
         if resp.status().is_success() {
-            let mut steam_web_url = String::from("steam://connect/");
-            steam_web_url.push_str(&config.server.url);
+            let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
             send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
@@ -790,6 +772,11 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
 pub(crate) async fn handle_cancel(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
+    let bot_state: &StateContainer = &data.get_mut::<BotState>().unwrap();
+    if bot_state.state == State::Queue {
+        send_simple_tagged_msg(&context, &msg, " command only valid during `.start` process", &msg.author).await;
+        return;
+    }
     let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
     ready_queue.clear();
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
