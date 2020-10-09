@@ -672,8 +672,6 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .map(|s| format!("{},", s))
             .collect();
         team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
-        println!("Team A steamids: '{}'", &team_a_steam_id_str);
-        println!("Team B steamids: '{}'", &team_b_steam_id_str);
         let response = MessageBuilder::new()
             .push("All players are ready. Server is starting...")
             .build();
