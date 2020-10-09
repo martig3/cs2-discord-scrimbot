@@ -7,6 +7,7 @@ use regex::Regex;
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
 use serenity::model::guild::GuildContainer;
+use serenity::model::id::GuildId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
@@ -71,7 +72,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     if !user_queue.contains(&msg.author) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
-            .push(" is not in the queue. Type `.join` to join the queue.")
+            .push(" is not in the queue. Type `!join` to join the queue.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
@@ -209,22 +210,11 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         }
         return;
     }
-    let mut user_queue_mention = String::from("");
-    for user in user_queue {
-        user_queue_mention.push_str(format!("- <@{}>", user.id).as_ref())
-    }
-    let response = MessageBuilder::new()
-        .push_line(user_queue_mention)
-        .push_bold_line("Scrim setup is starting...")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
     let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::MapPick;
     let maps: &Vec<String> = &data.get::<Maps>().unwrap();
     let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
-    let a_to_z = ('a'..'z').collect::<Vec<_>>();
+    let a_to_z = ('a'..'z').map(|f| f).collect::<Vec<_>>();
     let unicode_emoji_map = populate_unicode_emojis().await;
     for (i, map) in maps.iter().enumerate() {
         unicode_to_maps.insert(String::from(unicode_emoji_map.get(&a_to_z[i]).unwrap()), String::from(map));
@@ -254,14 +244,11 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
     let mut results: Vec<ReactionResult> = Vec::new();
     for reaction in updated_vote_msg.reactions {
-        let react_as_map: Option<&String> = unicode_to_maps.get(reaction.reaction_type.to_string().as_str());
-        if react_as_map != None {
-            let map = String::from(react_as_map.unwrap());
-            results.push(ReactionResult {
-                count: reaction.count,
-                map,
-            });
-        }
+        let map = String::from(unicode_to_maps.get(reaction.reaction_type.to_string().as_str()).unwrap());
+        results.push(ReactionResult {
+            count: reaction.count,
+            map,
+        });
     }
     let max_count = results
         .iter()
@@ -384,6 +371,8 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     let current_picker = draft.current_picker.clone().unwrap();
+    println!("Captain A: {}", draft.captain_a.as_ref().unwrap().name);
+    println!("Captain B: {}", draft.captain_b.as_ref().unwrap().name);
     if msg.author != *draft.captain_a.as_ref().unwrap() && msg.author != *draft.captain_b.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you are not a captain", &msg.author).await;
         return;
@@ -392,7 +381,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " it is not your turn to pick", &msg.author).await;
         return;
     }
-    if msg.mentions.is_empty() {
+    if msg.mentions.len() == 0 {
         send_simple_tagged_msg(&context, &msg, " please mention a discord user in your message.", &msg.author).await;
         return;
     }
@@ -412,6 +401,9 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         draft.current_picker = draft.captain_a.clone();
         list_unpicked(&user_queue, &draft, &context, &msg).await;
     }
+    println!("Current picker: {}", draft.current_picker.as_ref().unwrap().name);
+    println!("TEAM A: {:?}", draft.team_a);
+    println!("TEAM B: {:?}", draft.team_b);
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Ready;
@@ -422,31 +414,14 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
 pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
     let mut user_name = String::from("");
     for user in user_queue {
-        if !draft.team_a.contains(user) && !draft.team_b.contains(user) {
-            user_name.push_str("- @");
+        if !draft.team_a.contains(user) & &!draft.team_b.contains(user) {
+            user_name.push_str("\n- @");
             user_name.push_str(&user.name);
-            user_name.push_str("\n");
         }
     }
-    let mut team_a = String::from("");
-    for user in &draft.team_a {
-        team_a.push_str("- @");
-        team_a.push_str(&user.name);
-        team_a.push_str("\n");
-    }
-    let mut team_b = String::from("");
-    for user in &draft.team_b {
-        team_b.push_str("- @");
-        team_b.push_str(&user.name);
-        team_b.push_str("\n");
-    }
     let response = MessageBuilder::new()
-        .push_bold_line("Team A:")
-        .push_line(team_a)
-        .push_bold_line("Team B:")
-        .push_line(team_b)
-        .push_bold_line("Remaining players: ")
-        .push_line(user_name)
+        .push("Remaining players: ")
+        .push(user_name)
         .build();
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
@@ -457,16 +432,16 @@ pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
-    let split_content = msg.content.trim().split(' ').take(2).collect::<Vec<_>>();
-    if split_content.len()== 1 {
+    let steam_id = msg.content.trim().split(" ").take(2).count();
+    if steam_id == 1 {
         send_simple_tagged_msg(&context, &msg, " please check the command formatting. There must be a space in between `.steamid` and your steamid. \
         Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
         return;
     }
-    let steam_id_str: String = String::from(split_content[1]);
+    let steam_id_str: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
     let steam_id_regex = Regex::new("^STEAM_[0-5]:[01]:\\d+$").unwrap();
     if !steam_id_regex.is_match(&steam_id_str) {
-        send_simple_tagged_msg(&context, &msg, " invalid steamid formatting. Please follow this example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
+        send_simple_tagged_msg(&context, &msg, " invalid steamid formatting. Example: `.steamid STEAM_0:1:12345678`", &msg.author).await;
         return;
     }
     steam_id_cache.insert(*msg.author.id.as_u64(), String::from(&steam_id_str));
@@ -483,55 +458,11 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn handle_map_list(context: Context, msg: Message) {
-    let data = context.data.write().await;
-    let maps: &Vec<String> = data.get::<Maps>().unwrap();
-    let mut map_str = String::new();
-    for m in maps {
-        map_str.push_str(format!("- `{}`\n", m).as_ref());
-    }
-    let response = MessageBuilder::new()
-        .push_line("Current map pool:")
-        .push(map_str)
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
-}
-
-pub(crate) async fn handle_kick(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
-    let mut data = context.data.write().await;
-    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-    let user = &msg.mentions[0];
-    if !user_queue.contains(&user) {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" is not in the queue.")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
-        }
-        return;
-    }
-    let index = user_queue.iter().position(|r| r.id == user.id).unwrap();
-    user_queue.remove(index);
-    let response = MessageBuilder::new()
-        .mention(user)
-        .push(" has been kicked. Queue size: ")
-        .push(user_queue.len().to_string())
-        .push("/10")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
-    }
-}
-
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
-    if maps.len() >= 26 {
+    if maps.len() == 26 {
         let response = MessageBuilder::new()
             .mention(&msg.author)
             .push(" unable to add map, max amount reached.")
@@ -644,6 +575,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Error sending message: {:?}", why);
     }
 
+    println!("ready_queue length: {}", ready_queue.len());
     if ready_queue.len() >= 10 {
         println!("Launching server...");
         let draft: &Draft = &data.get::<Draft>().unwrap();
@@ -675,7 +607,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         println!("Team A steamids: '{}'", &team_a_steam_id_str);
         println!("Team B steamids: '{}'", &team_b_steam_id_str);
         let response = MessageBuilder::new()
-            .push("All players are ready. Server is starting...")
+            .mention(&msg.author)
+            .push(" server is starting...")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
@@ -778,7 +711,7 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
 pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
-    let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
+    let role_name = context.cache.role(GuildId::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap().name;
     return if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) { true } else {
         let response = MessageBuilder::new()
             .mention(&msg.author)
