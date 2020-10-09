@@ -787,6 +787,22 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
     send_simple_tagged_msg(&context, &msg, " is no longer `.ready`.", &msg.author).await;
 }
 
+pub(crate) async fn handle_cancel(context: Context, msg: Message) {
+    if !admin_check(&context, &msg).await { return; }
+    let mut data = context.data.write().await;
+    let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
+    ready_queue.clear();
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    draft.team_a = vec![];
+    draft.team_b = vec![];
+    draft.captain_a = None;
+    draft.captain_b = None;
+    draft.current_picker = None;
+    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::Queue;
+    send_simple_tagged_msg(&context, &msg, " `.start` process cancelled.", &msg.author).await;
+}
+
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
     let response = MessageBuilder::new()
         .push(text)
