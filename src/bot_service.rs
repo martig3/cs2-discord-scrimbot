@@ -416,7 +416,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
+pub(crate) async fn list_unpicked(user_queue: &[User], draft: &Draft, context: &Context, msg: &Message) {
     let mut user_name = String::from("");
     for user in user_queue {
         if !draft.team_a.contains(user) && !draft.team_b.contains(user) {
