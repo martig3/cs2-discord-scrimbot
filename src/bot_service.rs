@@ -211,7 +211,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
     }
     let mut user_queue_mention = String::from("");
     for user in user_queue {
-        user_queue_mention.push_str(format!("- <@{}>", user.id).as_ref())
+        user_queue_mention.push_str(format!("- <@{}>\n", user.id).as_ref())
     }
     let response = MessageBuilder::new()
         .push_line(user_queue_mention)
