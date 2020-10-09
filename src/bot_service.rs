@@ -36,7 +36,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
     if user_queue.len() >= 10 {
         let response = MessageBuilder::new()
             .mention(author)
-            .push(" sorry but the queue is full.")
+            .push(" sorry, the queue is full.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             println!("Error sending message: {:?}", why);
