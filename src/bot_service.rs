@@ -214,7 +214,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         user_queue_mention.push_str(format!("- <@{}>\n", user.id).as_ref())
     }
     let response = MessageBuilder::new()
-        .push_line(user_queue_mention)
+        .push(user_queue_mention)
         .push_bold_line("Scrim setup is starting...")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
