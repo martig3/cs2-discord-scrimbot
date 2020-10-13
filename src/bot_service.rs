@@ -706,8 +706,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
-                ("team1_steam_ids", &&team_ct),
-                ("team2_steam_ids", &&team_t)])
+                ("team1_steam_ids", &&team_t),
+                ("team2_steam_ids", &&team_ct)])
             .basic_auth(&dathost_username, dathost_password)
             .send()
             .await
