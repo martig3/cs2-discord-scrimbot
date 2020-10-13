@@ -700,14 +700,15 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let dathost_username = &config.dathost.username;
         let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
         let server_id = &config.server.id;
-
+        let match_end_url = &config.dathost.match_end_url;
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
 
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
                 ("team1_steam_ids", &&team_t),
-                ("team2_steam_ids", &&team_ct)])
+                ("team2_steam_ids", &&team_ct),
+                ("match_end_webhook_url", &match_end_url)])
             .basic_auth(&dathost_username, dathost_password)
             .send()
             .await

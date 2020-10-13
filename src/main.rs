@@ -35,6 +35,7 @@ struct ServerConfig {
 struct DathostConfig {
     username: String,
     password: String,
+    match_end_url: String,
 }
 
 #[derive(Serialize, Deserialize)]
