@@ -2,3 +2,4 @@
 .idea
 rust-dathost-scrimbot.iml
 *.yaml
+*.json
