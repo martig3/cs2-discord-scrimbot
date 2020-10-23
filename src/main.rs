@@ -23,6 +23,7 @@ struct Config {
     dathost: DathostConfig,
     discord: DiscordConfig,
     autoclear_hour: u32,
+    scrimbot_api_url: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -117,6 +118,7 @@ enum Command {
     LIST,
     START,
     STEAMID,
+    STATS,
     MAPS,
     ADDMAP,
     CANCEL,
@@ -146,6 +148,7 @@ impl FromStr for Command {
             ".start" => Ok(Command::START),
             ".steamid" => Ok(Command::STEAMID),
             ".maps" => Ok(Command::MAPS),
+            ".stats" => Ok(Command::STATS),
             ".kick" => Ok(Command::KICK),
             ".addmap" => Ok(Command::ADDMAP),
             ".cancel" => Ok(Command::CANCEL),
@@ -193,6 +196,7 @@ impl EventHandler for Handler {
             Command::START => bot_service::handle_start(context, msg).await,
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::MAPS => bot_service::handle_map_list(context, msg).await,
+            Command::STATS=> bot_service::handle_stats(context, msg).await,
             Command::KICK => bot_service::handle_kick(context, msg).await,
             Command::CANCEL => bot_service::handle_cancel(context, msg).await,
             Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
