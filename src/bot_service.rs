@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_std::task;
 use rand::Rng;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
 use serenity::model::guild::GuildContainer;
@@ -15,6 +16,15 @@ use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, St
 struct ReactionResult {
     count: u64,
     map: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize)]
+struct Stats {
+    steamId: String,
+    totalKills: f64,
+    totalDeaths: f64,
+    totalAssists: f64,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
@@ -789,6 +799,35 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
     let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
     bot_state.state = State::Queue;
     send_simple_tagged_msg(&context, &msg, " `.start` process cancelled.", &msg.author).await;
+}
+
+pub(crate) async fn handle_stats(context: Context, msg: Message) {
+    let data = context.data.write().await;
+    let config: &Config = data.get::<Config>().unwrap();
+    let client = reqwest::Client::new();
+    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+    if steam_id_cache.get(msg.author.id.as_u64()).is_none() {
+        send_simple_tagged_msg(&context, &msg, " cannot find your steamId, please assign one using the `.steamid` command", &msg.author).await;
+        return;
+    }
+    let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
+    steam_id.replace_range(6..7, "1");
+    let resp = client
+        .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+        .query(&[("steamid", &steam_id)])
+        .send()
+        .await
+        .unwrap();
+    if resp.status() == 204 {
+        send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user", &msg.author).await;
+        return;
+    }
+    let content = resp.text().await.unwrap();
+    let stats: Stats = serde_json::from_str(&content).unwrap();
+    send_simple_tagged_msg(&context, &msg,
+                           &format!(" Stats:\nK/D Ratio: `{}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                    format!("{:.2}", stats.totalKills / stats.totalDeaths),
+                                    stats.totalKills, stats.totalDeaths), &msg.author).await;
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
