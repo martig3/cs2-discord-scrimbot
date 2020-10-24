@@ -871,7 +871,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             .await
             .unwrap();
         if resp.status() != 200 {
-            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top5", &steam_id));
+            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
             return;
         }
         let content = resp.text().await.unwrap();
@@ -890,7 +890,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             let user: Option<User> = context.cache.user(user_id).await;
             if let Some(u) = user { top_five_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_five_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
         }
-        send_simple_tagged_msg(&context, &msg, &format!(" Top 5 K/D Ratio:\n{}", &top_five_str), &msg.author).await;
+        send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_five_str), &msg.author).await;
         return;
     }
 }
