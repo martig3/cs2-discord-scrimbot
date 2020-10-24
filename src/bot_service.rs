@@ -882,7 +882,6 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         }
         let mut top_five_str: String = String::from("");
         for stat in stats {
-            println!("{}", &stat.steamId);
             let user_id: u64 = *steam_id_cache.iter()
                 .find_map(|(key, val)|
                         if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
