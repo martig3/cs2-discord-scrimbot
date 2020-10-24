@@ -25,6 +25,7 @@ struct Stats {
     totalKills: f64,
     totalDeaths: f64,
     totalAssists: f64,
+    kdRatio: f64,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
@@ -139,6 +140,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
+`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add ` top10` to display top 10 ranking.
 `.kick` - Kick a player by mentioning them i.e. `.kick @user`
 `.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
 `.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
@@ -812,22 +814,85 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     }
     let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
     steam_id.replace_range(6..7, "1");
-    let resp = client
-        .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-        .query(&[("steamid", &steam_id)])
-        .send()
-        .await
-        .unwrap();
-    if resp.status() == 204 {
-        send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user", &msg.author).await;
+    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
+    if split_content.len() < 2 {
+        let resp = client
+            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+            .query(&[("steamid", &steam_id)])
+            .send()
+            .await
+            .unwrap();
+        if resp.status() != 200 {
+            send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+            return;
+        }
+        let content = resp.text().await.unwrap();
+        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+        if stats.is_empty() {
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
+            return;
+        }
+        let stat = &stats[0];
+        send_simple_tagged_msg(&context, &msg,
+                               &format!(" Stats:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
-    let content = resp.text().await.unwrap();
-    let stats: Stats = serde_json::from_str(&content).unwrap();
-    send_simple_tagged_msg(&context, &msg,
-                           &format!(" Stats:\nK/D Ratio: `{}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                    format!("{:.2}", stats.totalKills / stats.totalDeaths),
-                                    stats.totalKills, stats.totalDeaths), &msg.author).await;
+    let arg_str: String = String::from(split_content[1]);
+    let month_regex = Regex::new("\\dm").unwrap();
+    if month_regex.is_match(&arg_str) {
+        let resp = client
+            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string())])
+            .send()
+            .await
+            .unwrap();
+        if resp.status() != 200 {
+            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: range, length: {}", &steam_id, &arg_str.get(0..1).unwrap().to_string()));
+            return;
+        }
+        let content = resp.text().await.unwrap();
+        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+        if stats.is_empty() {
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
+            return;
+        }
+        let stat = &stats[0];
+        send_simple_tagged_msg(&context, &msg,
+                               &format!(" Stats - Past {} Month(s):\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        &arg_str.get(0..1).unwrap().to_string(), stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+        return;
+    }
+    if &arg_str == "top10" {
+        let resp = client
+            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+            .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
+            .send()
+            .await
+            .unwrap();
+        if resp.status() != 200 {
+            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top5", &steam_id));
+            return;
+        }
+        let content = resp.text().await.unwrap();
+        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+        if stats.is_empty() {
+            send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+            return;
+        }
+        let mut top_five_str: String = String::from("");
+        for stat in stats {
+            println!("{}", &stat.steamId);
+            let user_id: u64 = *steam_id_cache.iter()
+                .find_map(|(key, val)|
+                        if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
+                    ).unwrap();
+            let user: Option<User> = context.cache.user(user_id).await;
+            if let Some(u) = user { top_five_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_five_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
+        }
+        send_simple_tagged_msg(&context, &msg, &format!(" Top 5 K/D Ratio:\n{}", &top_five_str), &msg.author).await;
+        return;
+    }
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
