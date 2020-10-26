@@ -145,7 +145,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
-`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add ` top10` to display top 10 ranking.
+`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
 `.kick` - Kick a player by mentioning them i.e. `.kick @user`
 `.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
 `.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
@@ -896,6 +896,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 }
                 let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+            } else {
+                send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
             return;
         }
