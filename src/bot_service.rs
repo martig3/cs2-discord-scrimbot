@@ -145,7 +145,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
-`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add ` top10` to display top 10 ranking.
+`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
 `.kick` - Kick a player by mentioning them i.e. `.kick @user`
 `.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
 `.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
@@ -874,6 +874,33 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         return;
     }
     if &arg_str == "top10" {
+        if split_content.len() > 2 {
+            let month_regex = Regex::new("\\dm").unwrap();
+            let month_arg = split_content[2];
+            if month_regex.is_match(&month_arg) {
+                let resp = client
+                    .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .send()
+                    .await
+                    .unwrap();
+                if resp.status() != 200 {
+                    println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                    return;
+                }
+                let content = resp.text().await.unwrap();
+                let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+                if stats.is_empty() {
+                    send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                    return;
+                }
+                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+            } else {
+                send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
+            }
+            return;
+        }
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
             .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
@@ -890,16 +917,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
             return;
         }
-        let mut top_five_str: String = String::from("");
-        for stat in stats {
-            let user_id: u64 = *steam_id_cache.iter()
-                .find_map(|(key, val)|
-                    if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
-                ).unwrap();
-            let user: Option<User> = context.cache.user(user_id).await;
-            if let Some(u) = user { top_five_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_five_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
-        }
-        send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_five_str), &msg.author).await;
+        let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache).await;
+        send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
         return;
     }
 }
@@ -941,6 +960,19 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
         }
         false
     }
+}
+
+async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>) -> String {
+    let mut top_ten_str: String = String::from("");
+    for stat in stats {
+        let user_id: u64 = *steam_id_cache.iter()
+            .find_map(|(key, val)|
+                if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
+            ).unwrap();
+        let user: Option<User> = context.cache.user(user_id).await;
+        if let Some(u) = user { top_ten_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_ten_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
+    }
+    return top_ten_str;
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
