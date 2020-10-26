@@ -78,6 +78,11 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
 
 pub(crate) async fn handle_leave(context: Context, msg: Message) {
     let mut data = context.data.write().await;
+    let state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    if state.state != State::Queue {
+        send_simple_tagged_msg(&context, &msg, " cannot `.leave` the queue after `.start`, use `.cancel` to start over if needed.", &msg.author).await;
+        return;
+    }
     let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
     if !user_queue.contains(&msg.author) {
         let response = MessageBuilder::new()
@@ -521,6 +526,11 @@ pub(crate) async fn handle_map_list(context: Context, msg: Message) {
 pub(crate) async fn handle_kick(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
+    let state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    if state.state != State::Queue {
+        send_simple_tagged_msg(&context, &msg, " cannot `.kick` the queue after `.start`, use `.cancel` to start over if needed.", &msg.author).await;
+        return;
+    }
     let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
     let user = &msg.mentions[0];
     if !user_queue.contains(&user) {
@@ -884,8 +894,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         for stat in stats {
             let user_id: u64 = *steam_id_cache.iter()
                 .find_map(|(key, val)|
-                        if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
-                    ).unwrap();
+                    if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
+                ).unwrap();
             let user: Option<User> = context.cache.user(user_id).await;
             if let Some(u) = user { top_five_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_five_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
         }
