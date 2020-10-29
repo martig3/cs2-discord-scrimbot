@@ -7,7 +7,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
-use serenity::model::guild::GuildContainer;
+use serenity::model::guild::{Guild, GuildContainer};
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
@@ -894,7 +894,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache).await;
+                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64()).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
@@ -917,7 +917,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
             return;
         }
-        let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache).await;
+        let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64()).await;
         send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
         return;
     }
@@ -962,15 +962,29 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
     }
 }
 
-async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>) -> String {
+async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64) -> String {
     let mut top_ten_str: String = String::from("");
+    let guild = Guild::get(&context.http, guild_id).await.unwrap();
+    let mut count = 0;
     for stat in stats {
-        let user_id: u64 = *steam_id_cache.iter()
+        count += 1;
+        let user_id: Option<u64> = steam_id_cache.iter()
             .find_map(|(key, val)|
-                if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(key) } else { None }
-            ).unwrap();
-        let user: Option<User> = context.cache.user(user_id).await;
-        if let Some(u) = user { top_ten_str.push_str(&format!("- @{}: `{:.2}`\n", u.name, stat.kdRatio)) } else { top_ten_str.push_str(&format!("- @Error!: `{:.2}`\n", stat.kdRatio)) };
+                if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(*key) } else { None }
+            );
+        let user_cached: Option<User> = context.cache.user(user_id.unwrap_or(0)).await;
+        let user: Option<User>;
+        if let Some(u) = user_cached {
+            user = Some(u)
+        } else {
+            let member = guild.member(&context.http, user_id.unwrap_or(0)).await;
+            if let Ok(m) = member { user = Some(m.user) } else { user = None };
+        }
+        if let Some(u) = user {
+            top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio))
+        } else {
+            top_ten_str.push_str(&format!("{}. @Error - cannot find username!: `{:.2}`\n", count, stat.kdRatio))
+        };
     }
     return top_ten_str;
 }
