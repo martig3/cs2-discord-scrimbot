@@ -45,6 +45,10 @@ struct DiscordConfig {
     admin_role_id: u64,
     team_a_channel_id: u64,
     team_b_channel_id: u64,
+    emote_ct_id: u64,
+    emote_t_id: u64,
+    emote_ct_name: String,
+    emote_t_name: String,
 }
 
 #[derive(PartialEq)]
@@ -196,7 +200,7 @@ impl EventHandler for Handler {
             Command::START => bot_service::handle_start(context, msg).await,
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::MAPS => bot_service::handle_map_list(context, msg).await,
-            Command::STATS=> bot_service::handle_stats(context, msg).await,
+            Command::STATS => bot_service::handle_stats(context, msg).await,
             Command::KICK => bot_service::handle_kick(context, msg).await,
             Command::CANCEL => bot_service::handle_cancel(context, msg).await,
             Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
@@ -245,7 +249,7 @@ async fn main() -> () {
             current_picker: None,
             team_a: Vec::new(),
             team_b: Vec::new(),
-            team_b_start_side: String::from("")
+            team_b_start_side: String::from(""),
         });
     }
     if let Err(why) = client.start().await {

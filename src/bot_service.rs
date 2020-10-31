@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
 use serenity::model::guild::{Guild, GuildContainer};
+use serenity::model::id::EmojiId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
@@ -413,7 +414,16 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         let captain_b = draft.captain_b.clone().unwrap();
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::SidePick;
-        send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
+        let sidepick_msg = send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
+        let config: &mut Config = &mut data.get_mut::<Config>().unwrap();
+        if let Some(msg) = sidepick_msg {
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name))}).await {
+                println!("Error reacting with custom emoji: {:?}", why)
+            };
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name))}).await {
+                println!("Error reacting with custom emoji: {:?}", why)
+            };
+        }
     }
 }
 
@@ -932,13 +942,16 @@ pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str
     }
 }
 
-pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, text: &str, mentioned: &User) {
+pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, text: &str, mentioned: &User) -> Option<Message> {
     let response = MessageBuilder::new()
         .mention(mentioned)
         .push(text)
         .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+    if let Ok(m) = msg.channel_id.say(&context.http, &response).await {
+        Some(m)
+    } else {
+        println!("Error sending message");
+        None
     }
 }
 
