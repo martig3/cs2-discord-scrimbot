@@ -806,7 +806,7 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
     if !admin_check(&context, &msg).await { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = &data.get_mut::<BotState>().unwrap();
-    if bot_state.state == State::Queue {
+    if bot_state.state != State::Queue {
         send_simple_tagged_msg(&context, &msg, " command only valid during `.start` process", &msg.author).await;
         return;
     }
