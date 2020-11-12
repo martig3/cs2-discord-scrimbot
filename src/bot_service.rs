@@ -851,10 +851,17 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     }
     let arg_str: String = String::from(split_content[1]);
     let month_regex = Regex::new("\\dm").unwrap();
+    let map_idx_start = &msg.content.find("\"");
+    let map_idx_end = &msg.content.rfind("\"");
+    let mut map_name = String::new();
+    if map_idx_start != &None && map_idx_end != &None {
+        map_name = String::from(&msg.content[map_idx_start.unwrap()..map_idx_end.unwrap()])
+    }
+    println!("{}", &map_name);
     if month_regex.is_match(&arg_str) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string())])
+            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string()), (&"map", &map_name)])
             .send()
             .await
             .unwrap();
@@ -881,7 +888,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             if month_regex.is_match(&month_arg) {
                 let resp = client
                     .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -904,7 +911,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         } else {
             let resp = client
                 .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
+                .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), (&"map", &map_name)])
                 .send()
                 .await
                 .unwrap();
@@ -930,7 +937,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             if month_regex.is_match(&month_arg) {
                 let resp = client
                     .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -953,7 +960,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         } else {
             let resp = client
                 .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"maps".to_string())])
+                .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), (&"map", &map_name)])
                 .send()
                 .await
                 .unwrap();
@@ -1034,7 +1041,7 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
         if let Some(u) = user {
             if !print_map {
                 top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio));
-            } else  {
+            } else {
                 top_ten_str.push_str(&format!("{}. `{}`: `{:.2}`\n", count, stat.map, stat.kdRatio))
             }
         } else {
