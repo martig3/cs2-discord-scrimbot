@@ -12,7 +12,7 @@ use serenity::model::id::EmojiId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue};
+use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue, TeamNameCache};
 
 struct ReactionResult {
     count: u64,
@@ -418,10 +418,10 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         let sidepick_msg = send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
         let config: &mut Config = &mut data.get_mut::<Config>().unwrap();
         if let Some(msg) = sidepick_msg {
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name))}).await {
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name)) }).await {
                 println!("Error reacting with custom emoji: {:?}", why)
             };
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name))}).await {
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name)) }).await {
                 println!("Error reacting with custom emoji: {:?}", why)
             };
         }
@@ -984,6 +984,17 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     }
 }
 
+pub(crate) async fn handle_teamname(context: Context, msg: Message) {
+    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
+    if split_content.len() != 2 {
+        send_simple_tagged_msg(&context, &msg, " invalid message formatting. Example: `.teamname TeamName`", &msg.author).await;
+    }
+    let mut data = context.data.write().await;
+    let teamname_cache: &mut HashMap<u64, String> = &mut data.get_mut::<TeamNameCache>().unwrap();
+    teamname_cache.insert(*msg.author.id.as_u64(), String::from(split_content[1]));
+    write_to_file(String::from("teamnames.json"), serde_json::to_string(teamname_cache).unwrap()).await;
+}
+
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
     let response = MessageBuilder::new()
         .push(text)
@@ -1047,7 +1058,7 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
         if let Some(u) = user {
             if !print_map {
                 top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio));
-            } else  {
+            } else {
                 top_ten_str.push_str(&format!("{}. `{}`: `{:.2}`\n", count, stat.map, stat.kdRatio))
             }
         } else {
