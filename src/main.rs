@@ -83,6 +83,8 @@ struct ReadyQueue;
 
 struct SteamIdCache;
 
+struct TeamNameCache;
+
 struct BotState;
 
 struct Maps;
@@ -101,6 +103,10 @@ impl TypeMapKey for Config {
 }
 
 impl TypeMapKey for SteamIdCache {
+    type Value = HashMap<u64, String>;
+}
+
+impl TypeMapKey for TeamNameCache{
     type Value = HashMap<u64, String>;
 }
 
@@ -123,6 +129,7 @@ enum Command {
     START,
     STEAMID,
     STATS,
+    TEAMNAME,
     MAPS,
     ADDMAP,
     CANCEL,
@@ -153,6 +160,7 @@ impl FromStr for Command {
             ".steamid" => Ok(Command::STEAMID),
             ".maps" => Ok(Command::MAPS),
             ".stats" => Ok(Command::STATS),
+            ".teamname" => Ok(Command::TEAMNAME),
             ".kick" => Ok(Command::KICK),
             ".addmap" => Ok(Command::ADDMAP),
             ".cancel" => Ok(Command::CANCEL),
@@ -201,6 +209,7 @@ impl EventHandler for Handler {
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::MAPS => bot_service::handle_map_list(context, msg).await,
             Command::STATS => bot_service::handle_stats(context, msg).await,
+            Command::TEAMNAME => bot_service::handle_teamname(context, msg).await,
             Command::KICK => bot_service::handle_kick(context, msg).await,
             Command::CANCEL => bot_service::handle_cancel(context, msg).await,
             Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
@@ -241,6 +250,7 @@ async fn main() -> () {
         data.insert::<ReadyQueue>(Vec::new());
         data.insert::<Config>(config);
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
+        data.insert::<TeamNameCache>(read_teamnames().await.unwrap());
         data.insert::<BotState>(StateContainer { state: State::Queue });
         data.insert::<Maps>(read_maps().await.unwrap());
         data.insert::<Draft>(Draft {
@@ -266,6 +276,16 @@ async fn read_config() -> Result<Config, serde_yaml::Error> {
 async fn read_steam_ids() -> Result<HashMap<u64, String>, serde_json::Error> {
     if std::fs::read("steam-ids.json").is_ok() {
         let json_str = std::fs::read_to_string("steam-ids.json").unwrap();
+        let json = serde_json::from_str(&json_str).unwrap();
+        Ok(json)
+    } else {
+        Ok(HashMap::new())
+    }
+}
+
+async fn read_teamnames() -> Result<HashMap<u64, String>, serde_json::Error> {
+    if std::fs::read("teamnames.json").is_ok() {
+        let json_str = std::fs::read_to_string("teamnames.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
