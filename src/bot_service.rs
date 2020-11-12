@@ -27,6 +27,7 @@ struct Stats {
     totalDeaths: f64,
     totalAssists: f64,
     kdRatio: f64,
+    map: String,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
@@ -904,32 +905,82 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64()).await;
+                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
             return;
-        }
-        let resp = client
-            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
-            .send()
-            .await
-            .unwrap();
-        if resp.status() != 200 {
-            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+        } else {
+            let resp = client
+                .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+                .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
+                .send()
+                .await
+                .unwrap();
+            if resp.status() != 200 {
+                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                return;
+            }
+            let content = resp.text().await.unwrap();
+            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+            if stats.is_empty() {
+                send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                return;
+            }
+            let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
+            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
             return;
         }
-        let content = resp.text().await.unwrap();
-        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
-        if stats.is_empty() {
-            send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+    }
+    if &arg_str == "maps" {
+        if split_content.len() > 2 {
+            let month_regex = Regex::new("\\dm").unwrap();
+            let month_arg = split_content[2];
+            if month_regex.is_match(&month_arg) {
+                let resp = client
+                    .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .send()
+                    .await
+                    .unwrap();
+                if resp.status() != 200 {
+                    println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                    return;
+                }
+                let content = resp.text().await.unwrap();
+                let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+                if stats.is_empty() {
+                    send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                    return;
+                }
+                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+            } else {
+                send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
+            }
+            return;
+        } else {
+            let resp = client
+                .get(&format!("{}/api/stats", &config.scrimbot_api_url))
+                .query(&[("steamid", &steam_id), ("option", &"maps".to_string())])
+                .send()
+                .await
+                .unwrap();
+            if resp.status() != 200 {
+                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                return;
+            }
+            let content = resp.text().await.unwrap();
+            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+            if stats.is_empty() {
+                send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                return;
+            }
+            let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
+            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
             return;
         }
-        let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64()).await;
-        send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
-        return;
     }
 }
 
@@ -975,7 +1026,7 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
     }
 }
 
-async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64) -> String {
+async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
     let mut top_ten_str: String = String::from("");
     let guild = Guild::get(&context.http, guild_id).await.unwrap();
     let mut count = 0;
@@ -994,7 +1045,11 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
             if let Ok(m) = member { user = Some(m.user) } else { user = None };
         }
         if let Some(u) = user {
-            top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio))
+            if !print_map {
+                top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio));
+            } else  {
+                top_ten_str.push_str(&format!("{}. `{}`: `{:.2}`\n", count, stat.map, stat.kdRatio))
+            }
         } else {
             top_ten_str.push_str(&format!("{}. @Error - cannot find username!: `{:.2}`\n", count, stat.kdRatio))
         };
