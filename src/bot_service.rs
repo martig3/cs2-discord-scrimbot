@@ -825,8 +825,14 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     }
     let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
     steam_id.replace_range(6..7, "1");
+    let map_idx_start = &msg.content.find("\"");
+    let map_idx_end = &msg.content.rfind("\"");
+    let mut map_name = String::new();
+    if map_idx_start != &None && map_idx_end != &None {
+        map_name = String::from(&msg.content[map_idx_start.unwrap() + 1..map_idx_end.unwrap()])
+    }
     let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-    if split_content.len() < 2 {
+    if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
             .query(&[("steamid", &steam_id)])
@@ -844,20 +850,16 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             return;
         }
         let stat = &stats[0];
+        if map_name != "" {
+            map_name = format!(" - `{}`", &map_name)
+        }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats{}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     let arg_str: String = String::from(split_content[1]);
     let month_regex = Regex::new("\\dm").unwrap();
-    let map_idx_start = &msg.content.find("\"");
-    let map_idx_end = &msg.content.rfind("\"");
-    let mut map_name = String::new();
-    if map_idx_start != &None && map_idx_end != &None {
-        map_name = String::from(&msg.content[map_idx_start.unwrap()..map_idx_end.unwrap()])
-    }
-    println!("{}", &map_name);
     if month_regex.is_match(&arg_str) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
@@ -876,13 +878,16 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             return;
         }
         let stat = &stats[0];
+        if map_name != "" {
+            map_name = format!("`{}`", &map_name)
+        }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats - Past {} Month(s):\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        &arg_str.get(0..1).unwrap().to_string(), stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats - Past {} Month(s) {}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     if &arg_str == "top10" {
-        if split_content.len() > 2 {
+        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
             let month_regex = Regex::new("\\dm").unwrap();
             let month_arg = split_content[2];
             if month_regex.is_match(&month_arg) {
@@ -903,7 +908,10 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                if map_name != "" {
+                    map_name = format!("`{}`", &map_name)
+                }
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
@@ -931,7 +939,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         }
     }
     if &arg_str == "maps" {
-        if split_content.len() > 2 {
+        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
             let month_regex = Regex::new("\\dm").unwrap();
             let month_arg = split_content[2];
             if month_regex.is_match(&month_arg) {
@@ -952,7 +960,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
@@ -975,7 +983,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 return;
             }
             let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
-            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
+            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
             return;
         }
     }
