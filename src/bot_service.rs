@@ -126,7 +126,7 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_clear(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
     user_queue.clear();
@@ -140,27 +140,33 @@ pub(crate) async fn handle_clear(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_help(context: Context, msg: Message) {
-    let commands = String::from("\
+    let mut commands = String::from("
 `.join` - Join the queue
 `.leave` - Leave the queue
 `.list` - List all users in the queue
-`.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
 `.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
-`.kick` - Kick a player by mentioning them i.e. `.kick @user`
-`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
-`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
-`.recoverqueue` - Manually set a queue, tag all users to add after the command
-`.clear` - Clear the queue
-\n_These are commands used during the `.start` process:_
+_These are commands used during the `.start` process:_
 `.captain` - Add yourself as a captain.
 `.pick` - If you are a captain, this is used to pick a player
 `.ready` - After the draft phase is completed, use this to ready up
 `.unready` - After the draft phase is completed, use this to cancel your `.ready` status
 `.readylist` - Lists players not readied up
-`.cancel` - Cancels `.start` process
 ");
+    let admin_commands = String::from("
+_These are privileged admin commands:_
+`.start` - Start the match setup process
+`.kick` - Kick a player by mentioning them i.e. `.kick @user`
+`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
+`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
+`.recoverqueue` - Manually set a queue, tag all users to add after the command
+`.clear` - Clear the queue
+`.cancel` - Cancels `.start` process
+    ");
+    if admin_check(&context, &msg, false).await {
+        commands.push_str(&admin_commands)
+    }
     let response = MessageBuilder::new()
         .push(commands)
         .build();
@@ -170,7 +176,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     {
         let mut data = context.data.write().await;
         let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
@@ -201,6 +207,7 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_start(context: Context, msg: Message) {
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get::<BotState>().unwrap();
     if bot_state.state != State::Queue {
@@ -418,10 +425,10 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         let sidepick_msg = send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
         let config: &mut Config = &mut data.get_mut::<Config>().unwrap();
         if let Some(msg) = sidepick_msg {
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name))}).await {
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name)) }).await {
                 println!("Error reacting with custom emoji: {:?}", why)
             };
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name))}).await {
+            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name)) }).await {
                 println!("Error reacting with custom emoji: {:?}", why)
             };
         }
@@ -535,7 +542,7 @@ pub(crate) async fn handle_map_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_kick(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if state.state != State::Queue {
@@ -568,7 +575,7 @@ pub(crate) async fn handle_kick(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     if maps.len() >= 26 {
@@ -606,7 +613,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
@@ -804,7 +811,7 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_cancel(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = &data.get::<BotState>().unwrap();
     if bot_state.state == State::Queue {
@@ -1021,21 +1028,23 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
     }
 }
 
-pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
+pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
     if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
         true
     } else {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" this command requires the '")
-            .push(role_name)
-            .push("' role.")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+        if print_msg {
+            let response = MessageBuilder::new()
+                .mention(&msg.author)
+                .push(" this command requires the '")
+                .push(role_name)
+                .push("' role.")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
         }
         false
     }
