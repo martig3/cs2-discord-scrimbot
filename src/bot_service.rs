@@ -863,7 +863,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         let content = resp.text().await.unwrap();
         let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
         if stats.is_empty() {
-            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
             return;
         }
         let stat = &stats[0];
