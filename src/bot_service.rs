@@ -852,7 +852,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[("steamid", &steam_id)])
+            .query(&[("steamid", &steam_id), (&"map", &map_name)])
             .send()
             .await
             .unwrap();
