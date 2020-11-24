@@ -348,6 +348,10 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if draft.captain_a != None && &msg.author == draft.captain_a.as_ref().unwrap() {
+        send_simple_tagged_msg(&context, &msg, " you're already a captain!", &msg.author).await;
+        return;
+    }
     if draft.captain_a == None {
         send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
         draft.captain_a = Some(msg.author.clone());
