@@ -739,6 +739,10 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             team_t = team_b_steam_id_str;
         }
 
+        println!("Starting server with the following params:");
+        println!("team1_steam_ids:'{}'", &team_ct);
+        println!("team2_steam_ids:'{}'", &team_t);
+
         let config: &Config = data.get::<Config>().unwrap();
         let client = reqwest::Client::new();
         let dathost_username = &config.dathost.username;
@@ -746,6 +750,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let server_id = &config.server.id;
         let match_end_url = &config.dathost.match_end_url;
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
+        println!("match_end_webhook_url:'{}'", &match_end_url);
+        println!("game_server_id:'{}'", &server_id);
 
         let resp = client
             .post(&start_match_url)
