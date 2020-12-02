@@ -126,7 +126,7 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_clear(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
     user_queue.clear();
@@ -140,27 +140,33 @@ pub(crate) async fn handle_clear(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_help(context: Context, msg: Message) {
-    let commands = String::from("\
+    let mut commands = String::from("
 `.join` - Join the queue
 `.leave` - Leave the queue
 `.list` - List all users in the queue
-`.start` - Start the match setup process
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
 `.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
-`.kick` - Kick a player by mentioning them i.e. `.kick @user`
-`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
-`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
-`.recoverqueue` - Manually set a queue, tag all users to add after the command
-`.clear` - Clear the queue
-\n_These are commands used during the `.start` process:_
+_These are commands used during the `.start` process:_
 `.captain` - Add yourself as a captain.
 `.pick` - If you are a captain, this is used to pick a player
 `.ready` - After the draft phase is completed, use this to ready up
 `.unready` - After the draft phase is completed, use this to cancel your `.ready` status
 `.readylist` - Lists players not readied up
-`.cancel` - Cancels `.start` process
 ");
+    let admin_commands = String::from("
+_These are privileged admin commands:_
+`.start` - Start the match setup process
+`.kick` - Kick a player by mentioning them i.e. `.kick @user`
+`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
+`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
+`.recoverqueue` - Manually set a queue, tag all users to add after the command
+`.clear` - Clear the queue
+`.cancel` - Cancels `.start` process
+    ");
+    if admin_check(&context, &msg, false).await {
+        commands.push_str(&admin_commands)
+    }
     let response = MessageBuilder::new()
         .push(commands)
         .build();
@@ -170,7 +176,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     {
         let mut data = context.data.write().await;
         let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
@@ -201,6 +207,7 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_start(context: Context, msg: Message) {
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get::<BotState>().unwrap();
     if bot_state.state != State::Queue {
@@ -341,6 +348,10 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    if draft.captain_a != None && &msg.author == draft.captain_a.as_ref().unwrap() {
+        send_simple_tagged_msg(&context, &msg, " you're already a captain!", &msg.author).await;
+        return;
+    }
     if draft.captain_a == None {
         send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
         draft.captain_a = Some(msg.author.clone());
@@ -535,7 +546,7 @@ pub(crate) async fn handle_map_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_kick(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if state.state != State::Queue {
@@ -568,7 +579,7 @@ pub(crate) async fn handle_kick(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_add_map(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     if maps.len() >= 26 {
@@ -606,7 +617,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let maps: &mut Vec<String> = data.get_mut::<Maps>().unwrap();
     let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
@@ -728,6 +739,10 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             team_t = team_b_steam_id_str;
         }
 
+        println!("Starting server with the following params:");
+        println!("team1_steam_ids:'{}'", &team_ct);
+        println!("team2_steam_ids:'{}'", &team_t);
+
         let config: &Config = data.get::<Config>().unwrap();
         let client = reqwest::Client::new();
         let dathost_username = &config.dathost.username;
@@ -735,6 +750,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let server_id = &config.server.id;
         let match_end_url = &config.dathost.match_end_url;
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
+        println!("match_end_webhook_url:'{}'", &match_end_url);
+        println!("game_server_id:'{}'", &server_id);
 
         let resp = client
             .post(&start_match_url)
@@ -804,7 +821,7 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_cancel(context: Context, msg: Message) {
-    if !admin_check(&context, &msg).await { return; }
+    if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = &data.get::<BotState>().unwrap();
     if bot_state.state == State::Queue {
@@ -835,11 +852,17 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     }
     let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
     steam_id.replace_range(6..7, "1");
+    let map_idx_start = &msg.content.find("\"");
+    let map_idx_end = &msg.content.rfind("\"");
+    let mut map_name = String::new();
+    if map_idx_start != &None && map_idx_end != &None {
+        map_name = String::from(&msg.content[map_idx_start.unwrap() + 1..map_idx_end.unwrap()])
+    }
     let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-    if split_content.len() < 2 {
+    if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[("steamid", &steam_id)])
+            .query(&[("steamid", &steam_id), (&"map", &map_name)])
             .send()
             .await
             .unwrap();
@@ -850,13 +873,16 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         let content = resp.text().await.unwrap();
         let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
         if stats.is_empty() {
-            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
             return;
         }
         let stat = &stats[0];
+        if map_name != "" {
+            map_name = format!(" - `{}`", &map_name)
+        }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats{}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     let arg_str: String = String::from(split_content[1]);
@@ -864,7 +890,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
     if month_regex.is_match(&arg_str) {
         let resp = client
             .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string())])
+            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string()), (&"map", &map_name)])
             .send()
             .await
             .unwrap();
@@ -879,19 +905,22 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             return;
         }
         let stat = &stats[0];
+        if map_name != "" {
+            map_name = format!("`{}`", &map_name)
+        }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats - Past {} Month(s):\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        &arg_str.get(0..1).unwrap().to_string(), stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats - Past {} Month(s) {}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
+                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     if &arg_str == "top10" {
-        if split_content.len() > 2 {
+        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
             let month_regex = Regex::new("\\dm").unwrap();
             let month_arg = split_content[2];
             if month_regex.is_match(&month_arg) {
                 let resp = client
                     .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -906,7 +935,10 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                if map_name != "" {
+                    map_name = format!("`{}`", &map_name)
+                }
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
@@ -914,7 +946,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         } else {
             let resp = client
                 .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"top10".to_string())])
+                .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), (&"map", &map_name)])
                 .send()
                 .await
                 .unwrap();
@@ -934,13 +966,13 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         }
     }
     if &arg_str == "maps" {
-        if split_content.len() > 2 {
+        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
             let month_regex = Regex::new("\\dm").unwrap();
             let month_arg = split_content[2];
             if month_regex.is_match(&month_arg) {
                 let resp = client
                     .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string())])
+                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -955,7 +987,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
             } else {
                 send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
             }
@@ -963,7 +995,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         } else {
             let resp = client
                 .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"maps".to_string())])
+                .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), (&"map", &map_name)])
                 .send()
                 .await
                 .unwrap();
@@ -978,7 +1010,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 return;
             }
             let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
-            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
+            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
             return;
         }
     }
@@ -1017,21 +1049,23 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
     }
 }
 
-pub(crate) async fn admin_check(context: &Context, msg: &Message) -> bool {
+pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
     if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
         true
     } else {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" this command requires the '")
-            .push(role_name)
-            .push("' role.")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+        if print_msg {
+            let response = MessageBuilder::new()
+                .mention(&msg.author)
+                .push(" this command requires the '")
+                .push(role_name)
+                .push("' role.")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                println!("Error sending message: {:?}", why);
+            }
         }
         false
     }
