@@ -376,7 +376,12 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         bot_state.state = State::Draft;
         let user_queue: &Vec<User> = &mut data.get::<UserQueue>().unwrap();
         let draft: &Draft = &mut data.get::<Draft>().unwrap();
-        list_unpicked(&user_queue, &draft, &context, &msg).await;
+        let teamname_cache = data.get::<TeamNameCache>().unwrap();
+        let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+            .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
+        let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+            .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
+        list_unpicked(&user_queue, &draft, &context, &msg, team_a_name, team_b_name).await;
     }
 }
 
@@ -393,7 +398,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " this user is not in the queue", &msg.author).await;
         return;
     }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft= data.get::<Draft>().unwrap();
     let current_picker = draft.current_picker.clone().unwrap();
     if msg.author != *draft.captain_a.as_ref().unwrap() && msg.author != *draft.captain_b.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you are not a captain", &msg.author).await;
@@ -412,16 +417,22 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         return;
     }
 
+    let teamname_cache = data.get::<TeamNameCache>().unwrap();
+    let team_a_name = String::from(teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+        .unwrap_or(&draft.captain_a.as_ref().unwrap().name));
+    let team_b_name = String::from(teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+        .unwrap_or(&draft.captain_b.as_ref().unwrap().name));
+    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     if draft.captain_a.as_ref().unwrap() == &current_picker {
-        send_simple_tagged_msg(&context, &msg, " has been added to Team A", &picked).await;
+        send_simple_tagged_msg(&context, &msg, &format!(" has been added to Team {}", team_a_name), &picked).await;
         draft.team_a.push(picked);
         draft.current_picker = draft.captain_b.clone();
-        list_unpicked(&user_queue, &draft, &context, &msg).await;
+        list_unpicked(&user_queue, &draft, &context, &msg, &team_a_name, &team_b_name).await;
     } else {
-        send_simple_tagged_msg(&context, &msg, " has been added to Team B", &picked).await;
+        send_simple_tagged_msg(&context, &msg, &format!(" has been added to Team {}", team_b_name), &picked).await;
         draft.team_b.push(picked);
         draft.current_picker = draft.captain_a.clone();
-        list_unpicked(&user_queue, &draft, &context, &msg).await;
+        list_unpicked(&user_queue, &draft, &context, &msg, &team_a_name, &team_b_name).await;
     }
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let captain_b = draft.captain_b.clone().unwrap();
@@ -440,7 +451,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message) {
+pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message, team_a_name: &String, team_b_name: &String) {
     let remaining_users: String = user_queue
         .iter()
         .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
@@ -455,9 +466,9 @@ pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context
         .map(|user| format!("- @{}\n", &user.name))
         .collect();
     let response = MessageBuilder::new()
-        .push_bold_line("Team A:")
+        .push_bold_line(format!("Team {}:", team_a_name))
         .push_line(team_a)
-        .push_bold_line("Team B:")
+        .push_bold_line(format!("Team {}:", team_b_name))
         .push_line(team_b)
         .push_bold_line("Remaining players: ")
         .push_line(remaining_users)
