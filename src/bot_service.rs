@@ -779,7 +779,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
         if resp.status().is_success() {
             let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
-            send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {}", steam_web_url)).await;
+            send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {} \
+            - alternatively you can enter `connect {}` into the console", steam_web_url, &config.server.url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
