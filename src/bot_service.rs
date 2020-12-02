@@ -12,7 +12,7 @@ use serenity::model::id::EmojiId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, UserQueue, TeamNameCache};
+use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, TeamNameCache, UserQueue};
 
 struct ReactionResult {
     count: u64,
@@ -147,6 +147,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
 `.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
+`.teamname` - Sets a custom team name when you are a captain i.e. `.teamname TeamName`
 _These are commands used during the `.start` process:_
 `.captain` - Add yourself as a captain.
 `.pick` - If you are a captain, this is used to pick a player
@@ -740,8 +741,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         }
 
         println!("Starting server with the following params:");
-        println!("team1_steam_ids:'{}'", &team_ct);
-        println!("team2_steam_ids:'{}'", &team_t);
+        println!("team1_steam_ids:'{}'", &team_t);
+        println!("team2_steam_ids:'{}'", &team_ct);
 
         let config: &Config = data.get::<Config>().unwrap();
         let client = reqwest::Client::new();
@@ -763,7 +764,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .send()
             .await
             .unwrap();
-        println!("Start match response - {:#?}", &resp);
+        println!("Start match response code - {}", &resp.status());
 
         if resp.status().is_success() {
             let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
@@ -787,6 +788,43 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 }
             }
         }
+        if let Some(teamname_cache) = data.get::<TeamNameCache>() {
+            let send_command_url = format!("https://dathost.net/api/0.1/game-servers/{}/console", &config.server.id);
+            let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+            let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
+            let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
+            let team_a_name = teamname_cache.get(&draft.captain_a.as_ref().unwrap().id.as_u64())
+                .unwrap_or(default_team_a_name);
+            let team_b_name = teamname_cache.get(&draft.captain_b.as_ref().unwrap().id.as_u64())
+                .unwrap_or(default_team_b_name);
+            let team_one_command;
+            let team_two_command;
+            if draft.team_b_start_side == "ct" {
+                team_one_command = format!("mp_teamname_1 {}", &team_b_name);
+                team_two_command = format!("mp_teamname_2 {}", &team_a_name);
+            } else {
+                team_one_command = format!("mp_teamname_1 {}", &team_a_name);
+                team_two_command = format!("mp_teamname_2 {}", &team_b_name);
+            }
+            if let Err(resp) = client
+                .post(&send_command_url)
+                .form(&[("line", &team_one_command)])
+                .basic_auth(&dathost_username, dathost_password)
+                .send()
+                .await {
+                println!("Error setting team name 1: {:?}", resp);
+            }
+            let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+            if let Err(resp) = client
+                .post(&send_command_url)
+                .form(&[("line", &team_two_command)])
+                .basic_auth(&dathost_username, dathost_password)
+                .send()
+                .await {
+                println!("Error setting team name 2: {:?}", resp);
+            }
+        }
+        // reset to queue state
         let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
         user_queue.clear();
         let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
@@ -1017,14 +1055,22 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_teamname(context: Context, msg: Message) {
-    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-    if split_content.len() != 2 {
-        send_simple_tagged_msg(&context, &msg, " invalid message formatting. Example: `.teamname TeamName`", &msg.author).await;
-    }
+    if !privileged_role_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let teamname_cache: &mut HashMap<u64, String> = &mut data.get_mut::<TeamNameCache>().unwrap();
-    teamname_cache.insert(*msg.author.id.as_u64(), String::from(split_content[1]));
+    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
+    if split_content.len() < 2 {
+        send_simple_tagged_msg(&context, &msg, " invalid message formatting. Example: `.teamname TeamName`", &msg.author).await;
+        return;
+    }
+    let teamname = String::from(&msg.content[10..msg.content.len()]);
+    if teamname.len() > 18 {
+        send_simple_tagged_msg(&context, &msg, &format!(" team name is over the character limit by {}.", teamname.len() - 18), &msg.author).await;
+        return;
+    }
+    teamname_cache.insert(*msg.author.id.as_u64(), String::from(&teamname));
     write_to_file(String::from("teamnames.json"), serde_json::to_string(teamname_cache).unwrap()).await;
+    send_simple_tagged_msg(&context, &msg, &format!(" custom team name successfully set to `{}`", &teamname), &msg.author).await;
 }
 
 pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
@@ -1069,6 +1115,34 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: boo
         }
         false
     }
+}
+
+pub(crate) async fn privileged_role_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
+    let data = context.data.write().await;
+    let config: &Config = data.get::<Config>().unwrap();
+    let mut role_names = String::from("");
+    let mut has_role = false;
+    let mut count = 0;
+    while !has_role && &count < &config.discord.privileged_role_ids.len() {
+        let role_id = &config.discord.privileged_role_ids[count];
+        has_role = msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), *role_id).await.unwrap_or_else(|_| false);
+        role_names.push_str(context.cache.role(msg.guild_id.unwrap(), *role_id).await.unwrap().name.as_str());
+        role_names.push_str(", ");
+        count = count + 1;
+    }
+    role_names = String::from(&role_names[..role_names.len() - 2]);
+    if print_msg && !has_role {
+        let response = MessageBuilder::new()
+            .mention(&msg.author)
+            .push(" this command requires the '")
+            .push(role_names)
+            .push("' role(s).")
+            .build();
+        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+    }
+    has_role
 }
 
 async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
