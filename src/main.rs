@@ -43,6 +43,7 @@ struct DathostConfig {
 struct DiscordConfig {
     token: String,
     admin_role_id: u64,
+    privileged_role_ids: Vec<u64>,
     team_a_channel_id: u64,
     team_b_channel_id: u64,
     emote_ct_id: u64,
