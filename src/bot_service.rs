@@ -402,7 +402,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " this user is not in the queue", &msg.author).await;
         return;
     }
-    let draft= data.get::<Draft>().unwrap();
+    let draft = data.get::<Draft>().unwrap();
     let current_picker = draft.current_picker.clone().unwrap();
     if msg.author != *draft.captain_a.as_ref().unwrap() && msg.author != *draft.captain_b.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you are not a captain", &msg.author).await;
@@ -783,8 +783,11 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
         if resp.status().is_success() {
             let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
-            send_simple_msg(&context, &msg, &format!("Server has started. Open the following link to connect {} \
-            - alternatively you can enter `connect {}` into the console", steam_web_url, &config.server.url)).await;
+            let port_start = &config.server.url.find(':').unwrap_or_else(|| 0 as usize) + 1;
+            let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or_else(|_| 0) + 1;
+            let gotv_url = format!("{}:{}", &config.server.url[0..port_start], gotv_port);
+            send_simple_msg(&context, &msg, &format!("Server has started. Connection info:\nLink:{}\nConsole: \
+            `connect {}`\n\n _GOTV Info:_\nLink:{}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
@@ -935,8 +938,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             map_name = format!(" - `{}`", &map_name)
         }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                        &map_name, stat.kdRatio, stat.adr, stat.rws, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                        &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     let arg_str: String = String::from(split_content[1]);
@@ -963,8 +966,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             map_name = format!("`{}`", &map_name)
         }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     if &arg_str == "top10" {
