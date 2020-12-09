@@ -28,6 +28,10 @@ struct Stats {
     totalAssists: f64,
     kdRatio: f64,
     map: String,
+    hs: f64,
+    rws: f64,
+    adr: f64,
+    rating: f64,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
@@ -931,8 +935,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             map_name = format!(" - `{}`", &map_name)
         }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats{}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                        &map_name, stat.kdRatio, stat.adr, stat.rws, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     let arg_str: String = String::from(split_content[1]);
@@ -959,8 +963,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             map_name = format!("`{}`", &map_name)
         }
         send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats - Past {} Month(s) {}:\nK/D Ratio: `{:.2}`\nTotal Kills: `{}`\nTotal Deaths: `{}`",
-                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                               &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
         return;
     }
     if &arg_str == "top10" {
@@ -1177,9 +1181,9 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
         }
         if let Some(u) = user {
             if !print_map {
-                top_ten_str.push_str(&format!("{}. @{}: `{:.2}`\n", count, u.name, stat.kdRatio));
+                top_ten_str.push_str(&format!("{}. @{}: ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`\n", count, u.name, stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs));
             } else {
-                top_ten_str.push_str(&format!("{}. `{}`: `{:.2}`\n", count, stat.map, stat.kdRatio))
+                top_ten_str.push_str(&format!("{}. `{}`: ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`\n", count, stat.map, stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs))
             }
         } else {
             top_ten_str.push_str(&format!("{}. @Error - cannot find username!: `{:.2}`\n", count, stat.kdRatio))
