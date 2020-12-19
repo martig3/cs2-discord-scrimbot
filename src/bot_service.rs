@@ -786,8 +786,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             let port_start = &config.server.url.find(':').unwrap_or_else(|| 0 as usize) + 1;
             let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or_else(|_| 0) + 1;
             let gotv_url = format!("{}:{}", &config.server.url[0..port_start], gotv_port);
-            send_simple_msg(&context, &msg, &format!("Server has started. Connection info:\nLink:{}\nConsole: \
-            `connect {}`\n\n _GOTV Info:_\nLink:{}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
+            send_simple_msg(&context, &msg, &format!("Server has started.\n\n**Connection info:**\nLink: {}\nConsole: \
+            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
