@@ -12,7 +12,7 @@ use serenity::model::id::EmojiId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
-use crate::{BotState, Config, Draft, Maps, ReadyQueue, State, StateContainer, SteamIdCache, TeamNameCache, UserQueue};
+use crate::{BotState, Config, Draft, Maps, QueueMessages, ReadyQueue, State, StateContainer, SteamIdCache, TeamNameCache, UserQueue};
 
 struct ReactionResult {
     count: u64,
@@ -80,6 +80,14 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         println!("Error sending message: {:?}", why);
     }
+    let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
+    let quote_regex = Regex::new("[\"”“](.*?)[\"”“]").unwrap();
+    if let Some(mat) = quote_regex.find(&msg.content) {
+        let start = mat.start();
+        let mut end = mat.end();
+        end = end.min(start + 50);
+        queued_msgs.insert(*msg.author.id.as_u64(), String::from(msg.content[start..end].trim()));
+    }
 }
 
 pub(crate) async fn handle_leave(context: Context, msg: Message) {
@@ -111,12 +119,23 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         println!("Error sending message: {:?}", why);
     }
+    let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
+    if queued_msgs.get(&msg.author.id.as_u64()).is_some() {
+        queued_msgs.remove(&msg.author.id.as_u64());
+    }
 }
 
 pub(crate) async fn handle_list(context: Context, msg: Message) {
     let data = context.data.write().await;
     let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
-    let user_name: String = user_queue.iter().map(|user| format!("\n- @{}", user.name)).collect();
+    let queue_msgs: &HashMap<u64, String> = data.get::<QueueMessages>().unwrap();
+    let mut user_name = String::new();
+    for u in user_queue {
+        user_name.push_str(format!("\n- @{}", u.name).as_str());
+        if let Some(value) = queue_msgs.get(u.id.as_u64()) {
+            user_name.push_str(format!(": `{}`", value).as_str());
+        }
+    }
     let response = MessageBuilder::new()
         .push("Current queue size: ")
         .push(&user_queue.len())
@@ -175,8 +194,12 @@ _These are privileged admin commands:_
     let response = MessageBuilder::new()
         .push(commands)
         .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+    if let Ok(channel) = &msg.author.create_dm_channel(&context.http).await {
+        if let Err(why) = channel.say(&context.http, &response).await {
+            println!("Error sending message: {:?}", why);
+        }
+    } else {
+        println!("Error sending .help dm");
     }
 }
 
@@ -445,12 +468,20 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         let sidepick_msg = send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
         let config: &mut Config = &mut data.get_mut::<Config>().unwrap();
         if let Some(msg) = sidepick_msg {
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_ct_id), name: Some(String::from(&config.discord.emote_ct_name)) }).await {
-                println!("Error reacting with custom emoji: {:?}", why)
-            };
-            if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(config.discord.emote_t_id), name: Some(String::from(&config.discord.emote_t_name)) }).await {
-                println!("Error reacting with custom emoji: {:?}", why)
-            };
+            if let Some(emote_ct_id) = &config.discord.emote_ct_id {
+                if let Some(emote_ct_name) = &config.discord.emote_ct_name {
+                    if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(*emote_ct_id), name: Some(String::from(emote_ct_name)) }).await {
+                        println!("Error reacting with custom emoji: {:?}", why)
+                    };
+                }
+            }
+            if let Some(emote_t_id) = &config.discord.emote_t_id {
+                if let Some(emote_t_name) = &config.discord.emote_t_name {
+                    if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(*emote_t_id), name: Some(String::from(emote_t_name)) }).await {
+                        println!("Error reacting with custom emoji: {:?}", why)
+                    };
+                }
+            }
         }
     }
 }
@@ -764,7 +795,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let dathost_username = &config.dathost.username;
         let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
         let server_id = &config.server.id;
-        let match_end_url = &config.dathost.match_end_url;
+        let match_end_url = if &config.dathost.match_end_url == &None { "" } else { &config.dathost.match_end_url.as_ref().unwrap() };
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
         println!("match_end_webhook_url:'{}'", &match_end_url);
         println!("game_server_id:'{}'", &server_id);
@@ -774,7 +805,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .form(&[("game_server_id", &server_id),
                 ("team1_steam_ids", &&team_t),
                 ("team2_steam_ids", &&team_ct),
-                ("match_end_webhook_url", &match_end_url)])
+                ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
             .send()
             .await
@@ -793,17 +824,21 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         }
         let draft: &Draft = data.get::<Draft>().unwrap();
         let config: &Config = &data.get::<Config>().unwrap();
-        for user in &draft.team_a {
-            if let Some(guild) = &msg.guild(&context.cache).await {
-                if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_a_channel_id).await {
-                    println!("Cannot move user: {:?}", why);
+        if let Some(team_a_channel_id) = config.discord.team_a_channel_id {
+            for user in &draft.team_a {
+                if let Some(guild) = &msg.guild(&context.cache).await {
+                    if let Err(why) = guild.move_member(&context.http, user.id, team_a_channel_id).await {
+                        println!("Cannot move user: {:?}", why);
+                    }
                 }
             }
         }
-        for user in &draft.team_b {
-            if let Some(guild) = &msg.guild(&context.cache).await {
-                if let Err(why) = guild.move_member(&context.http, user.id, config.discord.team_b_channel_id).await {
-                    println!("Cannot move user: {:?}", why);
+        if let Some(team_b_channel_id) = config.discord.team_a_channel_id {
+            for user in &draft.team_b {
+                if let Some(guild) = &msg.guild(&context.cache).await {
+                    if let Err(why) = guild.move_member(&context.http, user.id, team_b_channel_id).await {
+                        println!("Cannot move user: {:?}", why);
+                    }
                 }
             }
         }
@@ -843,6 +878,11 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 println!("Error setting team name 2: {:?}", resp);
             }
         }
+        if let Some(post_start_msg) = &config.post_setup_msg {
+            if let Err(why) = msg.channel_id.say(&context.http, &post_start_msg).await {
+                println!("Error sending message: {:?}", why);
+            }
+        }
         // reset to queue state
         let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
         user_queue.clear();
@@ -856,6 +896,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         draft.current_picker = None;
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Queue;
+        let queue_msgs: &mut HashMap<u64, String> = &mut data.get_mut::<QueueMessages>().unwrap();
+        queue_msgs.clear();
     }
 }
 
@@ -901,83 +943,110 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
 pub(crate) async fn handle_stats(context: Context, msg: Message) {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
-    let client = reqwest::Client::new();
-    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
-    if steam_id_cache.get(msg.author.id.as_u64()).is_none() {
-        send_simple_tagged_msg(&context, &msg, " cannot find your steamId, please assign one using the `.steamid` command", &msg.author).await;
-        return;
-    }
-    let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
-    steam_id.replace_range(6..7, "1");
-    let map_idx_start = &msg.content.find("\"");
-    let map_idx_end = &msg.content.rfind("\"");
-    let mut map_name = String::new();
-    if map_idx_start != &None && map_idx_end != &None {
-        map_name = String::from(&msg.content[map_idx_start.unwrap() + 1..map_idx_end.unwrap()])
-    }
-    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-    if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
-        let resp = client
-            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[("steamid", &steam_id), (&"map", &map_name)])
-            .send()
-            .await
-            .unwrap();
-        if resp.status() != 200 {
-            send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+    if let Some(scrimbot_api_url) = &config.scrimbot_api_url {
+        let client = reqwest::Client::new();
+        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+        if steam_id_cache.get(msg.author.id.as_u64()).is_none() {
+            send_simple_tagged_msg(&context, &msg, " cannot find your steamId, please assign one using the `.steamid` command", &msg.author).await;
             return;
         }
-        let content = resp.text().await.unwrap();
-        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
-        if stats.is_empty() {
-            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
+        let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
+        steam_id.replace_range(6..7, "1");
+        let map_idx_start = &msg.content.find("\"");
+        let map_idx_end = &msg.content.rfind("\"");
+        let mut map_name = String::new();
+        if map_idx_start != &None && map_idx_end != &None {
+            map_name = String::from(&msg.content[map_idx_start.unwrap() + 1..map_idx_end.unwrap()])
+        }
+        let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
+        if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
+            let resp = client
+                .get(&format!("{}/api/stats", scrimbot_api_url))
+                .query(&[("steamid", &steam_id), (&"map", &map_name)])
+                .send()
+                .await
+                .unwrap();
+            if resp.status() != 200 {
+                send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                return;
+            }
+            let content = resp.text().await.unwrap();
+            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+            if stats.is_empty() {
+                send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
+                return;
+            }
+            let stat = &stats[0];
+            if map_name != "" {
+                map_name = format!(" - `{}`", &map_name)
+            }
+            send_simple_tagged_msg(&context, &msg,
+                                   &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                            &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
             return;
         }
-        let stat = &stats[0];
-        if map_name != "" {
-            map_name = format!(" - `{}`", &map_name)
-        }
-        send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                        &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
-        return;
-    }
-    let arg_str: String = String::from(split_content[1]);
-    let month_regex = Regex::new("\\dm").unwrap();
-    if month_regex.is_match(&arg_str) {
-        let resp = client
-            .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-            .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string()), (&"map", &map_name)])
-            .send()
-            .await
-            .unwrap();
-        if resp.status() != 200 {
-            println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: range, length: {}", &steam_id, &arg_str.get(0..1).unwrap().to_string()));
+        let arg_str: String = String::from(split_content[1]);
+        let month_regex = Regex::new("\\dm").unwrap();
+        if month_regex.is_match(&arg_str) {
+            let resp = client
+                .get(&format!("{}/api/stats", scrimbot_api_url))
+                .query(&[(&"steamid", &steam_id), (&"option", &"range".to_string()), (&"length", &arg_str.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                .send()
+                .await
+                .unwrap();
+            if resp.status() != 200 {
+                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: range, length: {}", &steam_id, &arg_str.get(0..1).unwrap().to_string()));
+                return;
+            }
+            let content = resp.text().await.unwrap();
+            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+            if stats.is_empty() {
+                send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
+                return;
+            }
+            let stat = &stats[0];
+            if map_name != "" {
+                map_name = format!("`{}`", &map_name)
+            }
+            send_simple_tagged_msg(&context, &msg,
+                                   &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
+                                            &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
             return;
         }
-        let content = resp.text().await.unwrap();
-        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
-        if stats.is_empty() {
-            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
-            return;
-        }
-        let stat = &stats[0];
-        if map_name != "" {
-            map_name = format!("`{}`", &map_name)
-        }
-        send_simple_tagged_msg(&context, &msg,
-                               &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                        &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
-        return;
-    }
-    if &arg_str == "top10" {
-        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
-            let month_regex = Regex::new("\\dm").unwrap();
-            let month_arg = split_content[2];
-            if month_regex.is_match(&month_arg) {
+        if &arg_str == "top10" {
+            if split_content.len() > 2 && !split_content[2].starts_with("\"") {
+                let month_regex = Regex::new("\\dm").unwrap();
+                let month_arg = split_content[2];
+                if month_regex.is_match(&month_arg) {
+                    let resp = client
+                        .get(&format!("{}/api/stats", scrimbot_api_url))
+                        .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                        .send()
+                        .await
+                        .unwrap();
+                    if resp.status() != 200 {
+                        println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                        return;
+                    }
+                    let content = resp.text().await.unwrap();
+                    let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+                    if stats.is_empty() {
+                        send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                        return;
+                    }
+                    let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+                    if map_name != "" {
+                        map_name = format!("`{}`", &map_name)
+                    }
+                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
+                } else {
+                    send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
+                }
+                return;
+            } else {
                 let resp = client
-                    .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                    .get(&format!("{}/api/stats", scrimbot_api_url))
+                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -991,45 +1060,42 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
-                if map_name != "" {
-                    map_name = format!("`{}`", &map_name)
-                }
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
-            } else {
-                send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
-            }
-            return;
-        } else {
-            let resp = client
-                .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), (&"map", &map_name)])
-                .send()
-                .await
-                .unwrap();
-            if resp.status() != 200 {
-                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
-            let content = resp.text().await.unwrap();
-            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
-            if stats.is_empty() {
-                send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
-                return;
-            }
-            let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
-            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
-            return;
         }
-    }
-    if &arg_str == "maps" {
-        if split_content.len() > 2 && !split_content[2].starts_with("\"") {
-            let month_regex = Regex::new("\\dm").unwrap();
-            let month_arg = split_content[2];
-            if month_regex.is_match(&month_arg) {
+        if &arg_str == "maps" {
+            if split_content.len() > 2 && !split_content[2].starts_with("\"") {
+                let month_regex = Regex::new("\\dm").unwrap();
+                let month_arg = split_content[2];
+                if month_regex.is_match(&month_arg) {
+                    let resp = client
+                        .get(&format!("{}/api/stats", scrimbot_api_url))
+                        .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                        .send()
+                        .await
+                        .unwrap();
+                    if resp.status() != 200 {
+                        println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                        return;
+                    }
+                    let content = resp.text().await.unwrap();
+                    let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+                    if stats.is_empty() {
+                        send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                        return;
+                    }
+                    let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
+                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                } else {
+                    send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
+                }
+                return;
+            } else {
                 let resp = client
-                    .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                    .get(&format!("{}/api/stats", scrimbot_api_url))
+                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -1043,32 +1109,10 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
-            } else {
-                send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
-            }
-            return;
-        } else {
-            let resp = client
-                .get(&format!("{}/api/stats", &config.scrimbot_api_url))
-                .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), (&"map", &map_name)])
-                .send()
-                .await
-                .unwrap();
-            if resp.status() != 200 {
-                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
-            let content = resp.text().await.unwrap();
-            let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
-            if stats.is_empty() {
-                send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
-                return;
-            }
-            let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
-            send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
-            return;
         }
     }
 }
@@ -1139,13 +1183,17 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: boo
 pub(crate) async fn privileged_role_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
+    if config.discord.privileged_role_ids.is_none() {
+        return true
+    }
     let mut role_names = String::from("");
     let mut has_role = false;
     let mut count = 0;
-    while !has_role && &count < &config.discord.privileged_role_ids.len() {
-        let role_id = &config.discord.privileged_role_ids[count];
-        has_role = msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), *role_id).await.unwrap_or_else(|_| false);
-        role_names.push_str(context.cache.role(msg.guild_id.unwrap(), *role_id).await.unwrap().name.as_str());
+    let role_ids = &config.discord.privileged_role_ids.clone().unwrap();
+    while !has_role && &count < &role_ids.len() {
+        let role_id = role_ids[count];
+        has_role = msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), role_id).await.unwrap_or_else(|_| false);
+        role_names.push_str(context.cache.role(msg.guild_id.unwrap(), role_id).await.unwrap().name.as_str());
         role_names.push_str(", ");
         count = count + 1;
     }
