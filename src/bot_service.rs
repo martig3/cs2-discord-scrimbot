@@ -164,13 +164,15 @@ pub(crate) async fn handle_clear(context: Context, msg: Message) {
 
 pub(crate) async fn handle_help(context: Context, msg: Message) {
     let mut commands = String::from("
-`.join` - Join the queue
+**Commands:**
+`.join` - Join the queue, add an optional message in quotes (max 50 characters) i.e. `.join \"available at 9pm\"`
 `.leave` - Leave the queue
 `.list` - List all users in the queue
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
-`.stats` - Lists all available statistics for user. Add ` Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
+`.stats` - Lists all available statistics for user. Add `Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
 `.teamname` - Sets a custom team name when you are a captain i.e. `.teamname TeamName`
+
 _These are commands used during the `.start` process:_
 `.captain` - Add yourself as a captain.
 `.pick` - If you are a captain, this is used to pick a player
@@ -179,7 +181,7 @@ _These are commands used during the `.start` process:_
 `.readylist` - Lists players not readied up
 ");
     let admin_commands = String::from("
-_These are privileged admin commands:_
+_These are admin commands:_
 `.start` - Start the match setup process
 `.kick` - Kick a player by mentioning them i.e. `.kick @user`
 `.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server will not start._
@@ -943,6 +945,10 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
 pub(crate) async fn handle_stats(context: Context, msg: Message) {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
+    if &config.scrimbot_api_url == &None {
+        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api url has not been configured", &msg.author).await;
+        return;
+    }
     if let Some(scrimbot_api_url) = &config.scrimbot_api_url {
         let client = reqwest::Client::new();
         let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
