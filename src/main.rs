@@ -13,7 +13,6 @@ use serenity::model::channel::Message;
 use serenity::model::prelude::Ready;
 use serenity::model::user::User;
 use serenity::prelude::{EventHandler, TypeMapKey};
-use serenity::utils::MessageBuilder;
 
 mod bot_service;
 
@@ -22,8 +21,12 @@ struct Config {
     server: ServerConfig,
     dathost: DathostConfig,
     discord: DiscordConfig,
-    autoclear_hour: u32,
-    scrimbot_api_url: String,
+    #[serde(default)]
+    post_setup_msg: Option<String>,
+    #[serde(default)]
+    autoclear_hour: Option<u32>,
+    #[serde(default)]
+    scrimbot_api_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,20 +39,27 @@ struct ServerConfig {
 struct DathostConfig {
     username: String,
     password: String,
-    match_end_url: String,
+    match_end_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct DiscordConfig {
     token: String,
     admin_role_id: u64,
-    privileged_role_ids: Vec<u64>,
-    team_a_channel_id: u64,
-    team_b_channel_id: u64,
-    emote_ct_id: u64,
-    emote_t_id: u64,
-    emote_ct_name: String,
-    emote_t_name: String,
+    #[serde(default)]
+    privileged_role_ids: Option<Vec<u64>>,
+    #[serde(default)]
+    team_a_channel_id: Option<u64>,
+    #[serde(default)]
+    team_b_channel_id: Option<u64>,
+    #[serde(default)]
+    emote_ct_id: Option<u64>,
+    #[serde(default)]
+    emote_t_id: Option<u64>,
+    #[serde(default)]
+    emote_ct_name: Option<String>,
+    #[serde(default)]
+    emote_t_name: Option<String>,
 }
 
 #[derive(PartialEq)]
@@ -90,6 +100,8 @@ struct BotState;
 
 struct Maps;
 
+struct QueueMessages;
+
 
 impl TypeMapKey for UserQueue {
     type Value = Vec<User>;
@@ -121,6 +133,10 @@ impl TypeMapKey for Maps {
 
 impl TypeMapKey for Draft {
     type Value = Draft;
+}
+
+impl TypeMapKey for QueueMessages {
+    type Value = HashMap<u64, String>;
 }
 
 enum Command {
@@ -185,16 +201,6 @@ impl FromStr for Command {
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
-        if msg.content.starts_with('!') {
-            let response = MessageBuilder::new()
-                .mention(&msg.author)
-                .push(" all commands now start with a period i.e. `.join`")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
-            }
-            return;
-        }
         if !msg.content.starts_with('.') { return; }
         let command = Command::from_str(&msg.content.to_lowercase()
             .trim()
@@ -240,7 +246,7 @@ async fn main() -> () {
     let token = &config.discord.token;
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("~"));
-    let mut client = Client::new(&token)
+    let mut client = Client::builder(&token)
         .event_handler(Handler {})
         .framework(framework)
         .await
@@ -249,6 +255,7 @@ async fn main() -> () {
         let mut data = client.data.write().await;
         data.insert::<UserQueue>(Vec::new());
         data.insert::<ReadyQueue>(Vec::new());
+        data.insert::<QueueMessages>(HashMap::new());
         data.insert::<Config>(config);
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
         data.insert::<TeamNameCache>(read_teamnames().await.unwrap());
@@ -305,24 +312,28 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
 }
 
 async fn autoclear_queue(context: &Context) {
-    println!("Autoclear feature started");
-    loop {
-        let autoclear_hour = get_autoclear_hour(context).await;
-        let current: DateTime<Local> = Local::now();
-        let mut autoclear: DateTime<Local> = Local.ymd(current.year(), current.month(), current.day())
-            .and_hms(autoclear_hour, 0, 0);
-        if autoclear.signed_duration_since(current).num_milliseconds() < 0 { autoclear = autoclear + ChronoDuration::days(1) }
-        let time_between: ChronoDuration = autoclear.signed_duration_since(current);
-        task::sleep(CoreDuration::from_millis(time_between.num_milliseconds() as u64)).await;
-        {
-            let mut data = context.data.write().await;
-            let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
-            user_queue.clear();
+    let autoclear_hour = get_autoclear_hour(context).await;
+    if let Some(autoclear_hour) = autoclear_hour {
+        println!("Autoclear feature started");
+        loop {
+            let current: DateTime<Local> = Local::now();
+            let mut autoclear: DateTime<Local> = Local.ymd(current.year(), current.month(), current.day())
+                .and_hms(autoclear_hour, 0, 0);
+            if autoclear.signed_duration_since(current).num_milliseconds() < 0 { autoclear = autoclear + ChronoDuration::days(1) }
+            let time_between: ChronoDuration = autoclear.signed_duration_since(current);
+            task::sleep(CoreDuration::from_millis(time_between.num_milliseconds() as u64)).await;
+            {
+                let mut data = context.data.write().await;
+                let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+                user_queue.clear();
+                let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
+                queued_msgs.clear();
+            }
         }
     }
 }
 
-async fn get_autoclear_hour(client: &Context) -> u32 {
+async fn get_autoclear_hour(client: &Context) -> Option<u32> {
     let data = client.data.write().await;
     let config: &Config = &data.get::<Config>().unwrap();
     config.autoclear_hour
