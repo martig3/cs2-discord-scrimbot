@@ -13,7 +13,6 @@ use serenity::model::channel::Message;
 use serenity::model::prelude::Ready;
 use serenity::model::user::User;
 use serenity::prelude::{EventHandler, TypeMapKey};
-
 mod bot_service;
 
 #[derive(Serialize, Deserialize)]
@@ -21,11 +20,8 @@ struct Config {
     server: ServerConfig,
     dathost: DathostConfig,
     discord: DiscordConfig,
-    #[serde(default)]
     post_setup_msg: Option<String>,
-    #[serde(default)]
     autoclear_hour: Option<u32>,
-    #[serde(default)]
     scrimbot_api_url: Option<String>,
 }
 
@@ -46,19 +42,12 @@ struct DathostConfig {
 struct DiscordConfig {
     token: String,
     admin_role_id: u64,
-    #[serde(default)]
     privileged_role_ids: Option<Vec<u64>>,
-    #[serde(default)]
     team_a_channel_id: Option<u64>,
-    #[serde(default)]
     team_b_channel_id: Option<u64>,
-    #[serde(default)]
     emote_ct_id: Option<u64>,
-    #[serde(default)]
     emote_t_id: Option<u64>,
-    #[serde(default)]
     emote_ct_name: Option<String>,
-    #[serde(default)]
     emote_t_name: Option<String>,
 }
 
@@ -167,7 +156,6 @@ enum Command {
 
 impl FromStr for Command {
     type Err = ();
-
     fn from_str(input: &str) -> Result<Command, Self::Err> {
         match input {
             ".join" => Ok(Command::JOIN),
