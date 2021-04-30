@@ -1,6 +1,6 @@
 # csgo-discord-scrimbot
 
-Discord bot for managing & organizing a queue for 10 man scrims in CSGO
+Discord bot for managing, automating & organizing 10 man scrims in CSGO
 
 ## Features
 
