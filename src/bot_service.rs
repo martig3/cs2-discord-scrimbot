@@ -377,6 +377,11 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " command ignored, not in the captain pick phase", &msg.author).await;
         return;
     }
+    let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
+    if !user_queue.contains(&msg.author) {
+        send_simple_tagged_msg(&context, &msg, " command ignored, you are not in the queue", &msg.author).await;
+        return;
+    }
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     if draft.captain_a != None && &msg.author == draft.captain_a.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you're already a captain!", &msg.author).await;
