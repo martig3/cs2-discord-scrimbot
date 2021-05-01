@@ -835,7 +835,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 }
             }
         }
-        if let Some(team_b_channel_id) = config.discord.team_a_channel_id {
+        if let Some(team_b_channel_id) = config.discord.team_b_channel_id {
             for user in &draft.team_b {
                 if let Some(guild) = &msg.guild(&context.cache).await {
                     if let Err(why) = guild.move_member(&context.http, user.id, team_b_channel_id).await {
