@@ -388,15 +388,23 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         return;
     }
     if draft.captain_a == None {
-        send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A).", &msg.author).await;
+        send_simple_tagged_msg(&context, &msg, " is set as captain.", &msg.author).await;
         draft.captain_a = Some(msg.author.clone());
-        draft.team_a.push(draft.captain_a.clone().unwrap());
     } else {
-        send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B).", &msg.author).await;
+        send_simple_tagged_msg(&context, &msg, " is set as captain.", &msg.author).await;
         draft.captain_b = Some(msg.author.clone());
-        draft.team_b.push(draft.captain_b.clone().unwrap());
     }
     if draft.captain_a != None && draft.captain_b != None {
+        send_simple_msg(&context, &msg, " randomizing captain pick order...").await;
+        // flip a coin, if 1 switch captains
+        if rand::thread_rng().gen_range(0, 1) != 0 {
+            draft.captain_a = draft.captain_b.clone();
+            draft.captain_b = draft.captain_a.clone();
+        }
+        draft.team_a.push(draft.captain_a.clone().unwrap());
+        draft.team_b.push(draft.captain_b.clone().unwrap());
+        send_simple_tagged_msg(&context, &msg, " is set as the first pick captain (Team A)", &draft.captain_a.clone().unwrap()).await;
+        send_simple_tagged_msg(&context, &msg, " is set as the second captain (Team B)", &draft.captain_b.clone().unwrap()).await;
         draft.current_picker = draft.captain_a.clone();
         let response = MessageBuilder::new()
             .push("Captain pick has concluded. Starting draft phase. ")
