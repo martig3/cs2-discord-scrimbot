@@ -395,9 +395,9 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         draft.captain_b = Some(msg.author.clone());
     }
     if draft.captain_a != None && draft.captain_b != None {
-        send_simple_msg(&context, &msg, " randomizing captain pick order...").await;
+        send_simple_msg(&context, &msg, "Randomizing captain pick order...").await;
         // flip a coin, if 1 switch captains
-        if rand::thread_rng().gen_range(0, 1) != 0 {
+        if rand::thread_rng().gen_range(0, 2) != 0 {
             draft.captain_a = draft.captain_b.clone();
             draft.captain_b = draft.captain_a.clone();
         }
