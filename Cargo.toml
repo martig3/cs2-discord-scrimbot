@@ -1,14 +1,14 @@
 [package]
 name = "csgo-discord-scrimbot"
-version = "0.13.2"
+version = "0.14.0"
 authors = ["MartinWienc <32913968+MartinWienc@users.noreply.github.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-tokio = { version = "0.2.0", features = ["full"] }
+tokio = { version = "1.5.0", features = ["full"] }
 reqwest = { version = "0.10", features = ["json", "blocking"] }
-serenity = "0.9.0-rc.0"
+serenity = "0.10.5"
 serde = "1.0"
 serde_json = "1.0"
 serde_yaml = "0.8"

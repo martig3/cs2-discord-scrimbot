@@ -42,13 +42,13 @@ struct DathostConfig {
 struct DiscordConfig {
     token: String,
     admin_role_id: u64,
-    privileged_role_ids: Option<Vec<u64>>,
     team_a_channel_id: Option<u64>,
     team_b_channel_id: Option<u64>,
     emote_ct_id: Option<u64>,
     emote_t_id: Option<u64>,
     emote_ct_name: Option<String>,
     emote_t_name: Option<String>,
+    assign_role_id: Option<u64>,
 }
 
 #[derive(PartialEq)]
@@ -232,8 +232,7 @@ impl EventHandler for Handler {
 async fn main() -> () {
     let config = read_config().await.unwrap();
     let token = &config.discord.token;
-    let framework = StandardFramework::new()
-        .configure(|c| c.prefix("~"));
+    let framework = StandardFramework::new();
     let mut client = Client::builder(&token)
         .event_handler(Handler {})
         .framework(framework)
@@ -259,7 +258,7 @@ async fn main() -> () {
         });
     }
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        eprintln!("Client error: {:?}", why);
     }
 }
 
