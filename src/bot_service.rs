@@ -434,6 +434,9 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
         return;
     }
+    if msg.mentions.is_empty() {
+        send_simple_tagged_msg(&context, &msg, " please mention a discord user in the message", &msg.author).await;
+    }
     let picked = msg.mentions[0].clone();
     let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().to_vec();
     if !user_queue.contains(&picked) {
