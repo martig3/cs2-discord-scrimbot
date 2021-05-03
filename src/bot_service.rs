@@ -42,10 +42,10 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
             .mention(author)
             .push(" steamID not found for your discord user, \
                     please use `.steamid <your steamID>` to assign one. Example: `.steamid STEAM_0:1:12345678` ")
-            .push("\nhttps://steamid.io/ is an easy way to find your steamID for your account")
+            .push("https://steamid.io/ is an easy way to find your steamID for your account")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -56,7 +56,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
             .push(" sorry but the queue is full.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -66,7 +66,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
             .push(" is already in the queue.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -78,7 +78,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         .push("/10")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
     let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
     let quote_regex = Regex::new("[\"”“](.*?)[\"”“]").unwrap();
@@ -87,6 +87,20 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         let mut end = mat.end();
         end = end.min(start + 50);
         queued_msgs.insert(*msg.author.id.as_u64(), String::from(msg.content[start..end].trim()));
+    }
+    let config: &Config = data.get::<Config>().unwrap();
+    if let Some(role_id) = config.discord.assign_role_id {
+        if let Ok(value) = msg.author.has_role(&context.http, msg.guild_id.unwrap(), role_id).await {
+            if !value {
+                let guild = Guild::get(&context.http, msg.guild_id.unwrap()).await.unwrap();
+                if let Ok(mut member) = guild.member(&context.http, msg.author.id).await {
+                    if let Err(err) = member.add_role(&context.http, role_id).await {
+                        eprintln!("assign_role_id exists but cannot add role to user, check bot permissions");
+                        eprintln!("{:?}", err);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -104,7 +118,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
             .push(" is not in the queue. Type `.join` to join the queue.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -117,7 +131,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
         .push("/10")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
     let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
     if queued_msgs.get(&msg.author.id.as_u64()).is_some() {
@@ -144,7 +158,7 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
         .build();
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -158,7 +172,7 @@ pub(crate) async fn handle_clear(context: Context, msg: Message) {
         .push(" cleared queue")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -198,10 +212,10 @@ _These are admin commands:_
         .build();
     if let Ok(channel) = &msg.author.create_dm_channel(&context.http).await {
         if let Err(why) = channel.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
     } else {
-        println!("Error sending .help dm");
+        eprintln!("Error sending .help dm");
     }
 }
 
@@ -211,6 +225,8 @@ pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
         let mut data = context.data.write().await;
         let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
         user_queue.clear();
+        let queue_msgs: &mut HashMap<u64, String> = &mut data.get_mut::<QueueMessages>().unwrap();
+        queue_msgs.clear();
     }
     for mention in &msg.mentions {
         handle_join(&context, &msg, &mention).await
@@ -232,7 +248,7 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
         .build();
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -255,7 +271,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
             .push(" the queue is not full yet")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -268,7 +284,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         .push_bold_line("Scrim setup is starting...")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
     let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::MapPick;
@@ -298,7 +314,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         .push("Voting will end in 10 seconds")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
     task::sleep(Duration::from_secs(10)).await;
     let updated_vote_msg = vote_msg.channel_id.message(&context.http, vote_msg.id).await.unwrap();
@@ -331,7 +347,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
             .push("` was selected at random")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         selected_map.push_str(map);
     } else {
@@ -342,7 +358,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
             .push("` will be played")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         selected_map.push_str(map);
     }
@@ -412,7 +428,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
             .push(" gets first `.pick @<user>`")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Draft;
@@ -436,6 +452,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
     if msg.mentions.is_empty() {
         send_simple_tagged_msg(&context, &msg, " please mention a discord user in the message", &msg.author).await;
+        return;
     }
     let picked = msg.mentions[0].clone();
     let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().to_vec();
@@ -489,14 +506,14 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
             if let Some(emote_ct_id) = &config.discord.emote_ct_id {
                 if let Some(emote_ct_name) = &config.discord.emote_ct_name {
                     if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(*emote_ct_id), name: Some(String::from(emote_ct_name)) }).await {
-                        println!("Error reacting with custom emoji: {:?}", why)
+                        eprintln!("Error reacting with custom emoji: {:?}", why)
                     };
                 }
             }
             if let Some(emote_t_id) = &config.discord.emote_t_id {
                 if let Some(emote_t_name) = &config.discord.emote_t_name {
                     if let Err(why) = msg.react(&context.http, ReactionType::Custom { animated: false, id: EmojiId(*emote_t_id), name: Some(String::from(emote_t_name)) }).await {
-                        println!("Error reacting with custom emoji: {:?}", why)
+                        eprintln!("Error reacting with custom emoji: {:?}", why)
                     };
                 }
             }
@@ -528,7 +545,7 @@ pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context
         .build();
 
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -593,7 +610,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
         .push("`")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -606,7 +623,7 @@ pub(crate) async fn handle_map_list(context: Context, msg: Message) {
         .push(map_str)
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -626,7 +643,7 @@ pub(crate) async fn handle_kick(context: Context, msg: Message) {
             .push(" is not in the queue.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -639,7 +656,7 @@ pub(crate) async fn handle_kick(context: Context, msg: Message) {
         .push("/10")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -653,7 +670,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
             .push(" unable to add map, max amount reached.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -664,7 +681,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
             .push(" unable to add map, already exists.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -677,7 +694,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
         .push("`")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -692,7 +709,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
             .push(" this map doesn't exist in the list.")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -706,7 +723,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
         .push("`")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -715,7 +732,7 @@ pub(crate) async fn handle_unknown(context: Context, msg: Message) {
         .push("Unknown command, type `.help` for list of commands.")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -745,7 +762,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .push(", you're already `.ready`")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         return;
     }
@@ -757,7 +774,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         .push("/10")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 
     if ready_queue.len() >= 10 {
@@ -792,7 +809,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .push("All players are ready. Server is starting...")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
+            eprintln!("Error sending message: {:?}", why);
         }
         let team_ct: String;
         let team_t: String;
@@ -884,7 +901,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 .basic_auth(&dathost_username, dathost_password)
                 .send()
                 .await {
-                println!("Error setting team name 1: {:?}", resp);
+                eprintln!("Error setting team name 1: {:?}", resp);
             }
             let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
             if let Err(resp) = client
@@ -893,12 +910,12 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 .basic_auth(&dathost_username, dathost_password)
                 .send()
                 .await {
-                println!("Error setting team name 2: {:?}", resp);
+                eprintln!("Error setting team name 2: {:?}", resp);
             }
         }
         if let Some(post_start_msg) = &config.post_setup_msg {
             if let Err(why) = msg.channel_id.say(&context.http, &post_start_msg).await {
-                println!("Error sending message: {:?}", why);
+                eprintln!("Error sending message: {:?}", why);
             }
         }
         // reset to queue state
@@ -1017,7 +1034,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 .await
                 .unwrap();
             if resp.status() != 200 {
-                println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: range, length: {}", &steam_id, &arg_str.get(0..1).unwrap().to_string()));
+                eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: range, length: {}", &steam_id, &arg_str.get(0..1).unwrap().to_string()));
                 return;
             }
             let content = resp.text().await.unwrap();
@@ -1047,7 +1064,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         .await
                         .unwrap();
                     if resp.status() != 200 {
-                        println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                        eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
                         return;
                     }
                     let content = resp.text().await.unwrap();
@@ -1073,7 +1090,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     .await
                     .unwrap();
                 if resp.status() != 200 {
-                    println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                    eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
                     return;
                 }
                 let content = resp.text().await.unwrap();
@@ -1099,7 +1116,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         .await
                         .unwrap();
                     if resp.status() != 200 {
-                        println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                        eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
                         return;
                     }
                     let content = resp.text().await.unwrap();
@@ -1122,7 +1139,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     .await
                     .unwrap();
                 if resp.status() != 200 {
-                    println!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                    eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
                     return;
                 }
                 let content = resp.text().await.unwrap();
@@ -1140,7 +1157,6 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_teamname(context: Context, msg: Message) {
-    if !privileged_role_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
     let teamname_cache: &mut HashMap<u64, String> = &mut data.get_mut::<TeamNameCache>().unwrap();
     let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
@@ -1163,7 +1179,7 @@ pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str
         .push(text)
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        println!("Error sending message: {:?}", why);
+        eprintln!("Error sending message: {:?}", why);
     }
 }
 
@@ -1175,7 +1191,7 @@ pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, tex
     if let Ok(m) = msg.channel_id.say(&context.http, &response).await {
         Some(m)
     } else {
-        println!("Error sending message");
+        eprintln!("Error sending message");
         None
     }
 }
@@ -1195,43 +1211,11 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: boo
                 .push("' role.")
                 .build();
             if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
+                eprintln!("Error sending message: {:?}", why);
             }
         }
         false
     }
-}
-
-pub(crate) async fn privileged_role_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
-    let data = context.data.write().await;
-    let config: &Config = data.get::<Config>().unwrap();
-    if config.discord.privileged_role_ids.is_none() {
-        return true
-    }
-    let mut role_names = String::from("");
-    let mut has_role = false;
-    let mut count = 0;
-    let role_ids = &config.discord.privileged_role_ids.clone().unwrap();
-    while !has_role && &count < &role_ids.len() {
-        let role_id = role_ids[count];
-        has_role = msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), role_id).await.unwrap_or_else(|_| false);
-        role_names.push_str(context.cache.role(msg.guild_id.unwrap(), role_id).await.unwrap().name.as_str());
-        role_names.push_str(", ");
-        count = count + 1;
-    }
-    role_names = String::from(&role_names[..role_names.len() - 2]);
-    if print_msg && !has_role {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" this command requires the '")
-            .push(role_names)
-            .push("' role(s).")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            println!("Error sending message: {:?}", why);
-        }
-    }
-    has_role
 }
 
 async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
