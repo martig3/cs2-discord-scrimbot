@@ -253,7 +253,8 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
 }
 
 pub(crate) async fn handle_start(context: Context, msg: Message) {
-    if !admin_check(&context, &msg, true).await { return; }
+    let admin_check = admin_check(&context, &msg, true).await;
+    if !admin_check { return; }
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get::<BotState>().unwrap();
     if bot_state.state != State::Queue {
@@ -261,8 +262,8 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         return;
     }
     let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-    if !user_queue.contains(&msg.author) {
-        send_simple_tagged_msg(&context, &msg, " users that are not in the queue cannot start the match", &msg.author).await;
+    if !user_queue.contains(&msg.author) && !admin_check {
+        send_simple_tagged_msg(&context, &msg, " non-admin users that are not in the queue cannot start the match", &msg.author).await;
         return;
     }
     if user_queue.len() != 10 {
