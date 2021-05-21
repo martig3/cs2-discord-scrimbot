@@ -32,6 +32,8 @@ struct Stats {
     rws: f64,
     adr: f64,
     rating: f64,
+    playCount: i64,
+    winPercentage: f64,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
@@ -1023,8 +1025,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 map_name = format!(" - `{}`", &map_name)
             }
             send_simple_tagged_msg(&context, &msg,
-                                   &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                            &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                                   &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nWin % (# Games): `{:.2}% ({})`",
+                                            &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount), &msg.author).await;
             return;
         }
         let arg_str: String = String::from(split_content[1]);
@@ -1051,8 +1053,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 map_name = format!("`{}`", &map_name)
             }
             send_simple_tagged_msg(&context, &msg,
-                                   &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nKills: `{}`\nDeaths: `{}`",
-                                            &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.totalKills, stat.totalDeaths), &msg.author).await;
+                                   &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nWin % (# Games): `{:.2}% ({})`",
+                                            &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount), &msg.author).await;
             return;
         }
         if &arg_str == "top10" {
@@ -1241,12 +1243,22 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
         }
         if let Some(u) = user {
             if !print_map {
-                top_ten_str.push_str(&format!("{}. @{}: ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`\n", count, u.name, stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs));
+                let mut user_name = String::from(u.name.clone());
+                if user_name.len() > 15 {
+                    user_name = user_name[0..15].to_string();
+                    user_name.push_str("...");
+                }
+                top_ten_str.push_str(&format!("{: >2}. @{} ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`, Win% (# Games): `{:.2}% ({})`\n", count, format!("`{: <18}`", user_name.to_owned() + ":"), stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount));
             } else {
-                top_ten_str.push_str(&format!("{}. `{}`: ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`\n", count, stat.map, stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs))
+                let mut map = String::from(stat.map.clone());
+                if map.len() > 19 {
+                    map = map[0..19].to_string();
+                    map.push_str("...");
+                }
+                top_ten_str.push_str(&format!("{: >2}. {} ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`, Win% (# Games): `{:.2}% ({})`\n", count, format!("`{: <22}`", map.to_owned() + ":"), stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount))
             }
         } else {
-            top_ten_str.push_str(&format!("{}. @Error - cannot find username!: `{:.2}`\n", count, stat.kdRatio))
+            top_ten_str.push_str(&format!("{}. @Error - cannot find username!\n", count))
         };
     }
     return top_ten_str;
