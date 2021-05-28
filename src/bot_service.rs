@@ -1020,13 +1020,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
                 return;
             }
-            let stat = &stats[0];
-            if map_name != "" {
-                map_name = format!(" - `{}`", &map_name)
-            }
-            send_simple_tagged_msg(&context, &msg,
-                                   &format!(" Stats{}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nWin % (# Games): `{:.2}% ({})`",
-                                            &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount), &msg.author).await;
+            let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+            send_simple_tagged_msg(&context, &msg, &top_ten_str, &msg.author).await;
             return;
         }
         let arg_str: String = String::from(split_content[1]);
@@ -1048,13 +1043,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
                 return;
             }
-            let stat = &stats[0];
-            if map_name != "" {
-                map_name = format!("`{}`", &map_name)
-            }
-            send_simple_tagged_msg(&context, &msg,
-                                   &format!(" Stats - Past {} Month(s) {}:\nK/D: `{:.2}`\nADR: `{:.2}`\nRWS: `{:.2}`\nRating: `{:.2}`\nHS%: `{:.2}`\nWin % (# Games): `{:.2}% ({})`",
-                                            &arg_str.get(0..1).unwrap().to_string(), &map_name, stat.kdRatio, stat.adr, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount), &msg.author).await;
+            let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+            send_simple_tagged_msg(&context, &msg, &top_ten_str, &msg.author).await;
             return;
         }
         if &arg_str == "top10" {
@@ -1078,7 +1068,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                         return;
                     }
-                    let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+                    let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
                     if map_name != "" {
                         map_name = format!("`{}`", &map_name)
                     }
@@ -1104,7 +1094,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
+                let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
@@ -1130,7 +1120,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                         return;
                     }
-                    let top_ten_str = format_top_ten_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
+                    let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
                     send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
                 } else {
                     send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
@@ -1153,7 +1143,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                     return;
                 }
-                let top_ten_str = format_top_ten_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
+                let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
@@ -1223,8 +1213,28 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: boo
     }
 }
 
-async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
+async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
     let mut top_ten_str: String = String::from("");
+    top_ten_str.push_str("```md\n");
+    if stats.len() == 1 {
+        let mut map = String::from(stats[0].map.clone());
+        if map != "" {
+            map = map.replace("de_", "");
+            if map.len() > 12 {
+                map = map[0..12].to_string();
+                map.push_str("...");
+            }
+            top_ten_str.push_str(&*format!("Map: {:<12} K/D    ADR      RWS    Rating   HS%      Win% (# Games)\n", map));
+        } else {
+            top_ten_str.push_str("                  K/D    ADR     RWS     Rating   HS%      Win% (# Games)\n");
+        }
+
+    } else if !print_map {
+        top_ten_str.push_str("     Player       K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
+    } else {
+        top_ten_str.push_str("     Maps         K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
+    }
+    top_ten_str.push_str("-----------------------------------------------------------------------------\n");
     let guild = Guild::get(&context.http, guild_id).await.unwrap();
     let mut count = 0;
     for stat in stats {
@@ -1244,23 +1254,25 @@ async fn format_top_ten_stats(stats: &Vec<Stats>, context: &Context, steam_id_ca
         if let Some(u) = user {
             if !print_map {
                 let mut user_name = String::from(u.name.clone());
-                if user_name.len() > 15 {
-                    user_name = user_name[0..15].to_string();
+                if user_name.len() > 12 {
+                    user_name = user_name[0..12].to_string();
                     user_name.push_str("...");
                 }
-                top_ten_str.push_str(&format!("{: >2}. @{} ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`, Win% (# Games): `{:.2}% ({})`\n", count, format!("`{: <18}`", user_name.to_owned() + ":"), stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount));
+                top_ten_str.push_str(&format!("{:>3} @{} {:3.2}  {: >6}   {: >6}    {:3.2}    {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", user_name.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount));
             } else {
                 let mut map = String::from(stat.map.clone());
-                if map.len() > 19 {
-                    map = map[0..19].to_string();
+                map = map.replace("de_", "");
+                if map.len() > 12 {
+                    map = map[0..12].to_string();
                     map.push_str("...");
                 }
-                top_ten_str.push_str(&format!("{: >2}. {} ADR: `{:.2}`, K/D: `{:.2}`, RWS: `{:.2}`, Rating: `{:.2}`, HS%: `{:.2}`, Win% (# Games): `{:.2}% ({})`\n", count, format!("`{: <22}`", map.to_owned() + ":"), stat.adr, stat.kdRatio, stat.rws, stat.rating, stat.hs, stat.winPercentage, stat.playCount))
+                top_ten_str.push_str(&format!("{:>3}  {} {:3.2}   {: >6}  {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", map.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount))
             }
         } else {
-            top_ten_str.push_str(&format!("{}. @Error - cannot find username!\n", count))
+            top_ten_str.push_str(&format!("{:>3} @Error!\n", format!("{}.", count.to_string())))
         };
     }
+    top_ten_str.push_str("```");
     return top_ten_str;
 }
 
