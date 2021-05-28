@@ -1224,9 +1224,9 @@ async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &Ha
                 map = map[0..12].to_string();
                 map.push_str("...");
             }
-            top_ten_str.push_str(&*format!("Map: {:<12} K/D    ADR      RWS    Rating   HS%      Win% (# Games)\n", map));
+            top_ten_str.push_str(&*format!("Map: {:<12} K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n", map));
         } else {
-            top_ten_str.push_str("                  K/D    ADR     RWS     Rating   HS%      Win% (# Games)\n");
+            top_ten_str.push_str("                  K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
         }
 
     } else if !print_map {
@@ -1258,7 +1258,7 @@ async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &Ha
                     user_name = user_name[0..12].to_string();
                     user_name.push_str("...");
                 }
-                top_ten_str.push_str(&format!("{:>3} @{} {:3.2}  {: >6}   {: >6}    {:3.2}    {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", user_name.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount));
+                top_ten_str.push_str(&format!("{:>3} @{} {:3.2}  {: >6}   {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", user_name.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount));
             } else {
                 let mut map = String::from(stat.map.clone());
                 map = map.replace("de_", "");
