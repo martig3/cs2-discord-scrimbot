@@ -158,9 +158,10 @@ impl FromStr for Command {
     type Err = ();
     fn from_str(input: &str) -> Result<Command, Self::Err> {
         match input {
-            ".join" => Ok(Command::JOIN),
+            _ if ".join".starts_with(input) => Ok(Command::JOIN),
             ".leave" => Ok(Command::LEAVE),
             ".list" => Ok(Command::LIST),
+            _ if ".queue".starts_with(input) => Ok(Command::LIST),
             ".start" => Ok(Command::START),
             ".steamid" => Ok(Command::STEAMID),
             ".maps" => Ok(Command::MAPS),
@@ -171,7 +172,8 @@ impl FromStr for Command {
             ".cancel" => Ok(Command::CANCEL),
             ".captain" => Ok(Command::CAPTAIN),
             ".pick" => Ok(Command::PICK),
-            ".ready" => Ok(Command::READY),
+            _ if ".ready".starts_with(input) => Ok(Command::READY),
+            ".gaben" => Ok(Command::READY),
             ".unready" => Ok(Command::UNREADY),
             ".ct" => Ok(Command::CT),
             ".t" => Ok(Command::T),
@@ -179,7 +181,7 @@ impl FromStr for Command {
             ".removemap" => Ok(Command::REMOVEMAP),
             ".recoverqueue" => Ok(Command::RECOVERQUEUE),
             ".clear" => Ok(Command::CLEAR),
-            ".help" => Ok(Command::HELP),
+            _ if ".help".starts_with(input) => Ok(Command::HELP),
             _ => Err(()),
         }
     }
