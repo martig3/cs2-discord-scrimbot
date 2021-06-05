@@ -29,7 +29,6 @@ using standard `cargo run`
 
 ```yaml
 autoclear_hour: <0-24> -- optional
-scrimbot_api_url: <scrimbot api url> -- optional, experimental
 post_setup_msg: GLHF! -- optional
 server:
   id: <your dathost server id>
@@ -49,7 +48,10 @@ discord:
   emote_ct_name: <a custom discord emote name> -- optional
   emote_t_name: <a custom discord emote name> -- optional
   assign_role_id: <a dicord role id to assign for user on queue join> -- optional
-
+scrimbot_api_config:
+  scrimbot_api_url: <scrimbot-api url> -- optional, experimental
+  scrimbot_api_user: <scrimbot-api username> 
+  scrimbot_api_password: <scrimbot-api password>
 ```
 
 ## Commands
