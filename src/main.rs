@@ -22,7 +22,15 @@ struct Config {
     discord: DiscordConfig,
     post_setup_msg: Option<String>,
     autoclear_hour: Option<u32>,
+    scrimbot_api_config: ScrimbotApiConfig
+}
+
+
+#[derive(Serialize, Deserialize)]
+struct ScrimbotApiConfig {
     scrimbot_api_url: Option<String>,
+    scrimbot_api_user: Option<String>,
+    scrimbot_api_password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
