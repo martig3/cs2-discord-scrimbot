@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_std::task;
 use rand::Rng;
 use regex::Regex;
+use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
@@ -839,12 +840,18 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
         println!("match_end_webhook_url:'{}'", &match_end_url);
         println!("game_server_id:'{}'", &server_id);
-
+        let mut auth_str = config.scrimbot_api_config.scrimbot_api_user.clone().unwrap();
+        auth_str.push_str(":");
+        auth_str.push_str(&*config.scrimbot_api_config.scrimbot_api_password.clone().unwrap());
+        let base64 = base64::encode(auth_str);
+        let mut auth_str = String::from("Basic ");
+        auth_str.push_str(&base64);
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
                 ("team1_steam_ids", &&team_t),
                 ("team2_steam_ids", &&team_ct),
+                ("webhook_authorization_header", &&auth_str),
                 ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
             .send()
@@ -983,12 +990,24 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
 pub(crate) async fn handle_stats(context: Context, msg: Message) {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
-    if &config.scrimbot_api_url == &None {
+    if &config.scrimbot_api_config.scrimbot_api_url == &None {
         send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api url has not been configured", &msg.author).await;
         return;
     }
-    if let Some(scrimbot_api_url) = &config.scrimbot_api_url {
-        let client = reqwest::Client::new();
+    if &config.scrimbot_api_config.scrimbot_api_user == &None || &config.scrimbot_api_config.scrimbot_api_password == &None{
+        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured", &msg.author).await;
+        return;
+    }
+    if let Some(scrimbot_api_url) = &config.scrimbot_api_config.scrimbot_api_url {
+        let mut headers = header::HeaderMap::new();
+        let mut auth_str = config.scrimbot_api_config.scrimbot_api_user.clone().unwrap();
+        auth_str.push_str(":");
+        auth_str.push_str(&*config.scrimbot_api_config.scrimbot_api_password.clone().unwrap());
+        let base64 = base64::encode(auth_str);
+        let mut auth_str = String::from("Basic ");
+        auth_str.push_str(&base64);
+        headers.insert("Authorization", auth_str.parse().unwrap());
+        let client = reqwest::Client::builder().default_headers(headers).build().unwrap();
         let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
         if steam_id_cache.get(msg.author.id.as_u64()).is_none() {
             send_simple_tagged_msg(&context, &msg, " cannot find your steamId, please assign one using the `.steamid` command", &msg.author).await;
@@ -1228,7 +1247,6 @@ async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &Ha
         } else {
             top_ten_str.push_str("                  K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
         }
-
     } else if !print_map {
         top_ten_str.push_str("     Player       K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
     } else {
