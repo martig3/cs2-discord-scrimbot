@@ -11,7 +11,7 @@ Discord bot for managing, automating & organizing 10 man scrims in CSGO
 - Automatically starts CSGO server & prints out connection info
 - Custom team names
 - Autoclear queue
-- Auto assign discord role to user on queue join  
+- Auto assign discord role to user on queue join
 - Integration with [scrimbot-api](https://github.com/Martig3/scrimbot-api) stats (experimental)
 
 ### Dedicated Server Host Support
@@ -48,9 +48,9 @@ discord:
   emote_ct_name: <a custom discord emote name> -- optional
   emote_t_name: <a custom discord emote name> -- optional
   assign_role_id: <a dicord role id to assign for user on queue join> -- optional
-scrimbot_api_config:
-  scrimbot_api_url: <scrimbot-api url> -- optional, experimental
-  scrimbot_api_user: <scrimbot-api username> 
+scrimbot_api_config: -- optional, experimental section
+  scrimbot_api_url: <scrimbot-api url>
+  scrimbot_api_user: <scrimbot-api username>
   scrimbot_api_password: <scrimbot-api password>
 ```
 
