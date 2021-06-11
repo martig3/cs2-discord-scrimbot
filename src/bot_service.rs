@@ -851,6 +851,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             .form(&[("game_server_id", &server_id),
                 ("team1_steam_ids", &&team_t),
                 ("team2_steam_ids", &&team_ct),
+                ("enable_pause", &&String::from("true")),
                 ("webhook_authorization_header", &&auth_str),
                 ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
