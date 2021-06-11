@@ -139,7 +139,7 @@ impl TypeMapKey for QueueMessages {
 enum Command {
     JOIN,
     LEAVE,
-    LIST,
+    QUEUE,
     START,
     STEAMID,
     STATS,
@@ -167,9 +167,8 @@ impl FromStr for Command {
     fn from_str(input: &str) -> Result<Command, Self::Err> {
         match input {
             _ if ".join".starts_with(input) => Ok(Command::JOIN),
-            ".leave" => Ok(Command::LEAVE),
-            ".list" => Ok(Command::LIST),
-            _ if ".queue".starts_with(input) => Ok(Command::LIST),
+            _ if ".leave".starts_with(input) => Ok(Command::LEAVE),
+            _ if ".queue".starts_with(input) => Ok(Command::QUEUE),
             ".start" => Ok(Command::START),
             ".steamid" => Ok(Command::STEAMID),
             ".maps" => Ok(Command::MAPS),
@@ -209,7 +208,7 @@ impl EventHandler for Handler {
         match command {
             Command::JOIN => bot_service::handle_join(&context, &msg, &msg.author).await,
             Command::LEAVE => bot_service::handle_leave(context, msg).await,
-            Command::LIST => bot_service::handle_list(context, msg).await,
+            Command::QUEUE => bot_service::handle_list(context, msg).await,
             Command::START => bot_service::handle_start(context, msg).await,
             Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
             Command::MAPS => bot_service::handle_map_list(context, msg).await,
