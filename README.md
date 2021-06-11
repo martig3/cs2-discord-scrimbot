@@ -66,8 +66,7 @@ scrimbot_api_config: -- optional, experimental section
 
 `.maps` - Lists all maps in available for play
 
-`.stats` - _Experimental Feature_: Lists all available statistics for user. Add ` Xm` to display past X months where X
-is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
+`.stats` - _Experimental Feature_: Lists all available statistics for user via [Scrimbot-API](https://github.com/Martig3/scrimbot-api) integration. Full param list: `.stats (top10|maps) [0-9]m "de_mapname"`
 
 `.teamname` - Sets a custom team name when you are a captain i.e. `.teamname TeamName`
 
