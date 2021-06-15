@@ -1092,7 +1092,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     if map_name != "" {
                         map_name = format!("`{}`", &map_name)
                     }
-                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
+                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
                 } else {
                     send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
                 }
@@ -1115,7 +1115,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio:\n{}", &top_ten_str), &msg.author).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 Ratio:\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
         }
@@ -1141,7 +1141,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         return;
                     }
                     let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
-                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
+                    send_simple_tagged_msg(&context, &msg, &format!(" Top 10 (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
                 } else {
                     send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
                 }
@@ -1164,7 +1164,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 K/D Ratio (per map):\n{}", &top_ten_str), &msg.author).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 (per map):\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
         }
