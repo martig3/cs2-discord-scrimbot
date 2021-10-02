@@ -867,7 +867,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or_else(|_| 0) + 1;
             let gotv_url = format!("{}{}", &config.server.url[0..port_start], gotv_port);
             send_simple_msg(&context, &msg, &format!("Server has started.\n\n**Connection info:**\nLink: {}\nConsole: \
-            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`\n", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
+            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
@@ -1086,7 +1086,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     let content = resp.text().await.unwrap();
                     let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
                     if stats.is_empty() {
-                        send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
+                        send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
                         return;
                     }
                     let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
@@ -1101,7 +1101,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             } else {
                 let resp = client
                     .get(&format!("{}/api/stats", scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), (&"map", &map_name)])
+                    .query(&[("option", &"top10".to_string()), (&"map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -1116,7 +1116,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     return;
                 }
                 let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
-                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 Ratio:\n{}", &top_ten_str), &msg.author).await;
+                send_simple_tagged_msg(&context, &msg, &format!(" Top 10 (ADR):\n{}", &top_ten_str), &msg.author).await;
                 return;
             }
         }
