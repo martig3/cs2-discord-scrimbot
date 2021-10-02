@@ -852,6 +852,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 ("team1_steam_ids", &&team_t),
                 ("team2_steam_ids", &&team_ct),
                 ("enable_pause", &&String::from("true")),
+                ("enable_tech_pause", &&String::from("true")),
                 ("webhook_authorization_header", &&auth_str),
                 ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
@@ -866,7 +867,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or_else(|_| 0) + 1;
             let gotv_url = format!("{}{}", &config.server.url[0..port_start], gotv_port);
             send_simple_msg(&context, &msg, &format!("Server has started.\n\n**Connection info:**\nLink: {}\nConsole: \
-            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
+            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`\n", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
         } else {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
