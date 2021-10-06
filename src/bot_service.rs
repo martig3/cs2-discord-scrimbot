@@ -184,7 +184,7 @@ pub(crate) async fn handle_help(context: Context, msg: Message) {
 **Commands:**
 `.join` - Join the queue, add an optional message in quotes (max 50 characters) i.e. `.join \"available at 9pm\"`
 `.leave` - Leave the queue
-`.list` - List all users in the queue
+`.queue` - List all users in the queue
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 `.maps` - Lists all maps in available for play
 `.stats` - Lists all available statistics for user. Add `Xm` to display past X months where X is a single digit integer. Add `.top10` to display top 10 ranking with an optional `.top10 Xm` month filter.
@@ -735,7 +735,8 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
 
 pub(crate) async fn handle_unknown(context: Context, msg: Message) {
     let response = MessageBuilder::new()
-        .push("Unknown command, type `.help` for list of commands.")
+        .mention(&msg.author)
+        .push(", unknown command, type `.help` for list of commands.")
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         eprintln!("Error sending message: {:?}", why);
