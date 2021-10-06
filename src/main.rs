@@ -13,6 +13,7 @@ use serenity::model::channel::Message;
 use serenity::model::prelude::Ready;
 use serenity::model::user::User;
 use serenity::prelude::{EventHandler, TypeMapKey};
+
 mod bot_service;
 
 #[derive(Serialize, Deserialize)]
@@ -22,7 +23,7 @@ struct Config {
     discord: DiscordConfig,
     post_setup_msg: Option<String>,
     autoclear_hour: Option<u32>,
-    scrimbot_api_config: ScrimbotApiConfig
+    scrimbot_api_config: ScrimbotApiConfig,
 }
 
 
@@ -116,7 +117,7 @@ impl TypeMapKey for SteamIdCache {
     type Value = HashMap<u64, String>;
 }
 
-impl TypeMapKey for TeamNameCache{
+impl TypeMapKey for TeamNameCache {
     type Value = HashMap<u64, String>;
 }
 
@@ -166,6 +167,7 @@ impl FromStr for Command {
     type Err = ();
     fn from_str(input: &str) -> Result<Command, Self::Err> {
         match input {
+            "." => Ok(Command::UNKNOWN),
             _ if ".join".starts_with(input) => Ok(Command::JOIN),
             _ if ".leave".starts_with(input) => Ok(Command::LEAVE),
             _ if ".queue".starts_with(input) => Ok(Command::QUEUE),
