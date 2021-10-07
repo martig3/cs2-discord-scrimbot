@@ -60,7 +60,7 @@ scrimbot_api_config: -- optional, experimental section
 
 `.leave` - Leave the queue
 
-`.list` - List all users in the queue
+`.queue` - List all users in the queue
 
 `.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
 
