@@ -258,41 +258,43 @@ pub(crate) async fn handle_ready_list(context: Context, msg: Message) {
 pub(crate) async fn handle_start(context: Context, msg: Message) {
     let admin_check = admin_check(&context, &msg, true).await;
     if !admin_check { return; }
-    let mut data = context.data.write().await;
-    let bot_state: &StateContainer = data.get::<BotState>().unwrap();
-    if bot_state.state != State::Queue {
-        send_simple_tagged_msg(&context, &msg, " `.start` command has already been entered", &msg.author).await;
-        return;
-    }
-    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-    if !user_queue.contains(&msg.author) && !admin_check {
-        send_simple_tagged_msg(&context, &msg, " non-admin users that are not in the queue cannot start the match", &msg.author).await;
-        return;
-    }
-    if user_queue.len() != 10 {
+    {
+        let mut data = context.data.write().await;
+        let bot_state: &StateContainer = data.get::<BotState>().unwrap();
+        if bot_state.state != State::Queue {
+            send_simple_tagged_msg(&context, &msg, " `.start` command has already been entered", &msg.author).await;
+            return;
+        }
+        let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
+        if !user_queue.contains(&msg.author) && !admin_check {
+            send_simple_tagged_msg(&context, &msg, " non-admin users that are not in the queue cannot start the match", &msg.author).await;
+            return;
+        }
+        if user_queue.len() != 10 {
+            let response = MessageBuilder::new()
+                .mention(&msg.author)
+                .push(" the queue is not full yet")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                eprintln!("Error sending message: {:?}", why);
+            }
+            return;
+        }
+        let user_queue_mention: String = user_queue
+            .iter()
+            .map(|user| format!("- <@{}>\n", user.id))
+            .collect();
         let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" the queue is not full yet")
+            .push(user_queue_mention)
+            .push_bold_line("Scrim setup is starting...")
             .build();
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             eprintln!("Error sending message: {:?}", why);
         }
-        return;
+        let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+        bot_state.state = State::MapPick;
     }
-    let user_queue_mention: String = user_queue
-        .iter()
-        .map(|user| format!("- <@{}>\n", user.id))
-        .collect();
-    let response = MessageBuilder::new()
-        .push(user_queue_mention)
-        .push_bold_line("Scrim setup is starting...")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        eprintln!("Error sending message: {:?}", why);
-    }
-    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::MapPick;
-    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
+    let maps: Vec<String> = get_maps(&context).await;
     let mut unicode_to_maps: HashMap<String, String> = HashMap::new();
     let a_to_z = ('a'..'z').collect::<Vec<_>>();
     let unicode_emoji_map = populate_unicode_emojis().await;
@@ -366,6 +368,7 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         }
         selected_map.push_str(map);
     }
+    let mut data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
@@ -977,6 +980,10 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " command only valid during `.start` process", &msg.author).await;
         return;
     }
+    if bot_state.state == State::MapPick {
+        send_simple_tagged_msg(&context, &msg, " please wait until the map vote has concluded before `.cancel`ing", &msg.author).await;
+        return;
+    }
     let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
     ready_queue.clear();
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
@@ -997,7 +1004,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api url has not been configured", &msg.author).await;
         return;
     }
-    if &config.scrimbot_api_config.scrimbot_api_user == &None || &config.scrimbot_api_config.scrimbot_api_password == &None{
+    if &config.scrimbot_api_config.scrimbot_api_user == &None || &config.scrimbot_api_config.scrimbot_api_password == &None {
         send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured", &msg.author).await;
         return;
     }
@@ -1295,6 +1302,13 @@ async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &Ha
     }
     top_ten_str.push_str("```");
     return top_ten_str;
+}
+
+pub(crate) async fn get_maps(context: &Context) -> Vec<String> {
+    let data = context.data.write().await;
+    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
+    let cloned: Vec<String> = Vec::from(maps.clone());
+    cloned
 }
 
 pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
