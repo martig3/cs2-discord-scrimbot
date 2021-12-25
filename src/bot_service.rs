@@ -611,16 +611,20 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     }
     steam_id_cache.insert(*msg.author.id.as_u64(), String::from(&steam_id_str));
     write_to_file(String::from("steam-ids.json"), serde_json::to_string(steam_id_cache).unwrap()).await;
+    let steamid_64 = convert_steamid_to_64(&steam_id_str);
     let response = MessageBuilder::new()
         .push("Updated steamid for ")
         .mention(&msg.author)
         .push(" to `")
         .push(&steam_id_str)
-        .push("`")
+        .push("`\n")
+        .push_line("Your steam community profile (please double check this is correct):")
+        .push_line(format!("https://steamcommunity.com/profiles/{}", steamid_64))
         .build();
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         eprintln!("Error sending message: {:?}", why);
     }
+
 }
 
 pub(crate) async fn handle_map_list(context: Context, msg: Message) {
@@ -1343,4 +1347,14 @@ pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
     map.insert('y', String::from("🇾"));
     map.insert('z', String::from("🇿"));
     map
+}
+
+pub fn convert_steamid_to_64(steamid: &String) -> u64 {
+    let steamid_split: Vec<&str> = steamid.split(":").collect();
+    let x = steamid_split[0].chars().nth(6).unwrap().encode_utf8(&mut [1]).parse::<i64>().unwrap();
+    let y = steamid_split[1].parse::<i64>().unwrap();
+    let z = steamid_split[2].parse::<i64>().unwrap();
+    println!("x={}, y={}, z={}", x, y, z);
+    let steamid_64 = (z * 2) + y + 76561197960265728;
+    return steamid_64 as u64;
 }
