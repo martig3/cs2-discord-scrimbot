@@ -1351,7 +1351,6 @@ pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
 
 pub fn convert_steamid_to_64(steamid: &String) -> u64 {
     let steamid_split: Vec<&str> = steamid.split(":").collect();
-    let x = steamid_split[0].chars().nth(6).unwrap().encode_utf8(&mut [1]).parse::<i64>().unwrap();
     let y = steamid_split[1].parse::<i64>().unwrap();
     let z = steamid_split[2].parse::<i64>().unwrap();
     let steamid_64 = (z * 2) + y + 76561197960265728;
