@@ -383,15 +383,118 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         .unwrap();
     println!("Change map response - {:#?}", resp.status());
     let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::CaptainPick;
+    bot_state.state = State::DraftTypePick;
     let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
     draft.captain_a = None;
     draft.captain_b = None;
     draft.team_a = Vec::new();
     draft.team_b = Vec::new();
-    send_simple_msg(&context, &msg, "Starting captain pick phase. Two users type `.captain` to start picking teams.").await;
+    send_simple_msg(&context, &msg, "Map vote complete. Select draft type using `.autodraft` or `.manualdraft`").await;
 }
 
+pub(crate) async fn handle_auto_draft(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().clone();
+    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+    let mut user_queue_steamids: HashMap<u64, String> = HashMap::new();
+    let mut user_queue_user_ids: HashMap<String, u64> = HashMap::new();
+    for user in user_queue {
+        let mut steamid = steam_id_cache.get(user.id.as_u64()).unwrap().to_string();
+        steamid = steamid.replacen("STEAM_0", "STEAM_1", 1);
+        user_queue_steamids.insert(*user.id.as_u64(), steamid.clone());
+        user_queue_user_ids.insert(steamid.clone(), *user.id.as_u64());
+    }
+    let steamids: String = user_queue_steamids.into_values()
+        .map(|s| format!("{},", s))
+        .collect();
+
+    let config: &Config = data.get::<Config>().unwrap();
+    if &config.scrimbot_api_config.scrimbot_api_user == &None || &config.scrimbot_api_config.scrimbot_api_password == &None {
+        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured. This option is unavailable.", &msg.author).await;
+        return;
+    }
+    if let Some(scrimbot_api_url) = &config.scrimbot_api_config.scrimbot_api_url {
+        let mut headers = header::HeaderMap::new();
+        let mut auth_str = config.scrimbot_api_config.scrimbot_api_user.clone().unwrap();
+        auth_str.push_str(":");
+        auth_str.push_str(&*config.scrimbot_api_config.scrimbot_api_password.clone().unwrap());
+        let base64 = base64::encode(auth_str);
+        let mut auth_str = String::from("Basic ");
+        auth_str.push_str(&base64);
+        headers.insert("Authorization", auth_str.parse().unwrap());
+        let client = reqwest::Client::builder().default_headers(headers).build().unwrap();
+        let resp = client
+            .get(&format!("{}/api/stats", scrimbot_api_url))
+            .query(&[("steamids", &steamids), ("option", &"players".to_string())])
+            .send()
+            .await
+            .unwrap();
+        if resp.status() != 200 {
+            eprintln!("{}", format!("HTTP error on /api/stats with following params: steamids: {}, option: players", &steamids));
+            return;
+        }
+        let content = resp.text().await.unwrap();
+        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+        if stats.is_empty() {
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for any players, please use another option", &msg.author).await;
+            return;
+        }
+        if stats.len() < 2 {
+            send_simple_tagged_msg(&context, &msg, " sorry, unable to find stats for at least 2 players. Please use another option", &msg.author).await;
+            return;
+        }
+        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+        let captain_a_user = user_queue.into_iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(0).unwrap().steamId).unwrap()).unwrap();
+        let captain_b_user = user_queue.into_iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(1).unwrap().steamId).unwrap()).unwrap();
+        draft.captain_a = Some(captain_a_user.clone());
+        draft.team_a.push(captain_a_user.clone());
+        draft.captain_b = Some(captain_b_user.clone());
+        draft.team_b.push(captain_b_user.clone());
+        for i in 2..stats.len() {
+            if i % 2 == 0 {
+                draft.team_b.push(user_queue.into_iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(i).unwrap().steamId).unwrap()).unwrap().clone());
+                draft.current_picker = Some(draft.captain_a.as_ref().unwrap().clone())
+            } else {
+                draft.team_a.push(user_queue.into_iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(i).unwrap().steamId).unwrap()).unwrap().clone());
+                draft.current_picker = Some(draft.captain_b.as_ref().unwrap().clone())
+            }
+        }
+        if draft.team_a.len() != 5 || draft.team_b.len() != 5 {
+            let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+            bot_state.state = State::Draft;
+            let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+            send_simple_msg(&context, &msg, " unable to find stats for all players. Continue draft and pick the remaining players manually.").await;
+            let response = MessageBuilder::new()
+                .push("It is ")
+                .mention(&draft.current_picker.clone().unwrap())
+                .push(" turn to `.pick @<user>`")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                eprintln!("Error sending message: {:?}", why);
+            }
+            let user_queue: &Vec<User> = &mut data.get::<UserQueue>().unwrap();
+            let draft: &Draft = &mut data.get::<Draft>().unwrap();
+            let teamname_cache = data.get::<TeamNameCache>().unwrap();
+            let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
+            let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
+            list_unpicked(&user_queue, &draft, &context, &msg, team_a_name, team_b_name).await;
+        } else {
+            let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+            bot_state.state = State::SidePick;
+            let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+            send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &draft.captain_b.as_ref().unwrap().clone()).await;
+        }
+    }
+}
+
+pub(crate) async fn handle_manual_draft(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::CaptainPick;
+    send_simple_msg(&context, &msg, "Manual draft selected. Starting captain pick phase. Two users type `.captain` to start picking teams.").await;
+}
 
 pub(crate) async fn handle_captain(context: Context, msg: Message) {
     let mut data = context.data.write().await;
@@ -624,7 +727,6 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         eprintln!("Error sending message: {:?}", why);
     }
-
 }
 
 pub(crate) async fn handle_map_list(context: Context, msg: Message) {
