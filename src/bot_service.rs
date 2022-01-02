@@ -483,7 +483,13 @@ pub(crate) async fn handle_auto_draft(context: Context, msg: Message) {
         } else {
             let mut bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
             bot_state.state = State::SidePick;
-            let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+            let draft: &Draft = &data.get::<Draft>().unwrap();
+            let teamname_cache = data.get::<TeamNameCache>().unwrap();
+            let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
+            let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
+            list_teams(draft, &context, &msg, team_a_name, team_b_name).await;
             send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &draft.captain_b.as_ref().unwrap().clone()).await;
         }
     }
@@ -633,33 +639,6 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message, team_a_name: &String, team_b_name: &String) {
-    let remaining_users: String = user_queue
-        .iter()
-        .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_a: String = draft.team_a
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_b: String = draft.team_b
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let response = MessageBuilder::new()
-        .push_bold_line(format!("Team {}:", team_a_name))
-        .push_line(team_a)
-        .push_bold_line(format!("Team {}:", team_b_name))
-        .push_line(team_b)
-        .push_bold_line("Remaining players: ")
-        .push_line(remaining_users)
-        .build();
-
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        eprintln!("Error sending message: {:?}", why);
-    }
-}
 
 pub(crate) async fn handle_ct_option(context: Context, msg: Message) {
     let mut data = context.data.write().await;
@@ -1457,4 +1436,54 @@ pub fn convert_steamid_to_64(steamid: &String) -> u64 {
     let z = steamid_split[2].parse::<i64>().unwrap();
     let steamid_64 = (z * 2) + y + 76561197960265728;
     return steamid_64 as u64;
+}
+
+pub(crate) async fn list_teams(draft: &Draft, context: &Context, msg: &Message, team_a_name: &String, team_b_name: &String) {
+    let team_a: String = draft.team_a
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let team_b: String = draft.team_b
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let response = MessageBuilder::new()
+        .push_bold_line(format!("Team {}:", team_a_name))
+        .push_line(team_a)
+        .push_bold_line(format!("Team {}:", team_b_name))
+        .push_line(team_b)
+        .build();
+
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        eprintln!("Error sending message: {:?}", why);
+    }
+}
+
+
+pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message, team_a_name: &String, team_b_name: &String) {
+    let remaining_users: String = user_queue
+        .iter()
+        .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let team_a: String = draft.team_a
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let team_b: String = draft.team_b
+        .iter()
+        .map(|user| format!("- @{}\n", &user.name))
+        .collect();
+    let response = MessageBuilder::new()
+        .push_bold_line(format!("Team {}:", team_a_name))
+        .push_line(team_a)
+        .push_bold_line(format!("Team {}:", team_b_name))
+        .push_line(team_b)
+        .push_bold_line("Remaining players: ")
+        .push_line(remaining_users)
+        .build();
+
+    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+        eprintln!("Error sending message: {:?}", why);
+    }
 }
