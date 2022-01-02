@@ -1,5 +1,3 @@
-#![feature(map_into_keys_values)]
-
 use core::time::Duration as CoreDuration;
 use std::collections::HashMap;
 use std::str::FromStr;
