@@ -14,10 +14,11 @@ use serenity::model::prelude::Ready;
 use serenity::model::user::User;
 use serenity::prelude::{EventHandler, TypeMapKey};
 
-mod bot_service;
+mod commands;
+mod utils;
 
 #[derive(Serialize, Deserialize)]
-struct Config {
+pub struct Config {
     server: ServerConfig,
     dathost: DathostConfig,
     discord: DiscordConfig,
@@ -28,27 +29,27 @@ struct Config {
 
 
 #[derive(Serialize, Deserialize)]
-struct ScrimbotApiConfig {
+pub struct ScrimbotApiConfig {
     scrimbot_api_url: Option<String>,
     scrimbot_api_user: Option<String>,
     scrimbot_api_password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct ServerConfig {
+pub struct ServerConfig {
     id: String,
     url: String,
 }
 
 #[derive(Serialize, Deserialize)]
-struct DathostConfig {
+pub struct DathostConfig {
     username: String,
     password: String,
     match_end_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct DiscordConfig {
+pub struct DiscordConfig {
     token: String,
     admin_role_id: u64,
     team_a_channel_id: Option<u64>,
@@ -138,7 +139,7 @@ impl TypeMapKey for QueueMessages {
     type Value = HashMap<u64, String>;
 }
 
-enum Command {
+pub enum Command {
     JOIN,
     LEAVE,
     QUEUE,
@@ -213,31 +214,31 @@ impl EventHandler for Handler {
             .collect::<Vec<_>>()[0])
             .unwrap_or(Command::UNKNOWN);
         match command {
-            Command::JOIN => bot_service::handle_join(&context, &msg, &msg.author).await,
-            Command::LEAVE => bot_service::handle_leave(context, msg).await,
-            Command::QUEUE => bot_service::handle_list(context, msg).await,
-            Command::START => bot_service::handle_start(context, msg).await,
-            Command::STEAMID => bot_service::handle_steam_id(context, msg).await,
-            Command::MAPS => bot_service::handle_map_list(context, msg).await,
-            Command::STATS => bot_service::handle_stats(context, msg).await,
-            Command::TEAMNAME => bot_service::handle_teamname(context, msg).await,
-            Command::KICK => bot_service::handle_kick(context, msg).await,
-            Command::CANCEL => bot_service::handle_cancel(context, msg).await,
-            Command::ADDMAP => bot_service::handle_add_map(context, msg).await,
-            Command::REMOVEMAP => bot_service::handle_remove_map(context, msg).await,
-            Command::CAPTAIN => bot_service::handle_captain(context, msg).await,
-            Command::AUTODRAFT => bot_service::handle_auto_draft(context, msg).await,
-            Command::MANUALDRAFT => bot_service::handle_manual_draft(context, msg).await,
-            Command::PICK => bot_service::handle_pick(context, msg).await,
-            Command::READY => bot_service::handle_ready(context, msg).await,
-            Command::UNREADY => bot_service::handle_unready(context, msg).await,
-            Command::CT => bot_service::handle_ct_option(context, msg).await,
-            Command::T => bot_service::handle_t_option(context, msg).await,
-            Command::READYLIST => bot_service::handle_ready_list(context, msg).await,
-            Command::RECOVERQUEUE => bot_service::handle_recover_queue(context, msg).await,
-            Command::CLEAR => bot_service::handle_clear(context, msg).await,
-            Command::HELP => bot_service::handle_help(context, msg).await,
-            Command::UNKNOWN => bot_service::handle_unknown(context, msg).await,
+            Command::JOIN => commands::handle_join(&context, &msg, &msg.author).await,
+            Command::LEAVE => commands::handle_leave(context, msg).await,
+            Command::QUEUE => commands::handle_list(context, msg).await,
+            Command::START => commands::handle_start(context, msg).await,
+            Command::STEAMID => commands::handle_steam_id(context, msg).await,
+            Command::MAPS => commands::handle_map_list(context, msg).await,
+            Command::STATS => commands::handle_stats(context, msg).await,
+            Command::TEAMNAME => commands::handle_teamname(context, msg).await,
+            Command::KICK => commands::handle_kick(context, msg).await,
+            Command::CANCEL => commands::handle_cancel(context, msg).await,
+            Command::ADDMAP => commands::handle_add_map(context, msg).await,
+            Command::REMOVEMAP => commands::handle_remove_map(context, msg).await,
+            Command::CAPTAIN => commands::handle_captain(context, msg).await,
+            Command::AUTODRAFT => commands::handle_auto_draft(context, msg).await,
+            Command::MANUALDRAFT => commands::handle_manual_draft(context, msg).await,
+            Command::PICK => commands::handle_pick(context, msg).await,
+            Command::READY => commands::handle_ready(context, msg).await,
+            Command::UNREADY => commands::handle_unready(context, msg).await,
+            Command::CT => commands::handle_ct_option(context, msg).await,
+            Command::T => commands::handle_t_option(context, msg).await,
+            Command::READYLIST => commands::handle_ready_list(context, msg).await,
+            Command::RECOVERQUEUE => commands::handle_recover_queue(context, msg).await,
+            Command::CLEAR => commands::handle_clear(context, msg).await,
+            Command::HELP => commands::handle_help(context, msg).await,
+            Command::UNKNOWN => commands::handle_unknown(context, msg).await,
         }
     }
     async fn ready(&self, context: Context, ready: Ready) {
