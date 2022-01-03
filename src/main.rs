@@ -251,9 +251,9 @@ async fn main() -> () {
         .expect("Error creating client");
     {
         let mut data = client.data.write().await;
-        data.insert::<UserQueue>(Vec::new());
+        data.insert::<UserQueue>(read_queue().await.unwrap());
         data.insert::<ReadyQueue>(Vec::new());
-        data.insert::<QueueMessages>(HashMap::new());
+        data.insert::<QueueMessages>(read_queue_msgs().await.unwrap());
         data.insert::<Config>(config);
         data.insert::<SteamIdCache>(read_steam_ids().await.unwrap());
         data.insert::<TeamNameCache>(read_teamnames().await.unwrap());
@@ -306,6 +306,26 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
         Ok(json)
     } else {
         Ok(Vec::new())
+    }
+}
+
+async fn read_queue() -> Result<Vec<User>, serde_json::Error> {
+    if std::fs::read("queue.json").is_ok() {
+        let json_str = std::fs::read_to_string("queue.json").unwrap();
+        let json = serde_json::from_str(&json_str).unwrap();
+        Ok(json)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+async fn read_queue_msgs() -> Result<HashMap<u64, String>, serde_json::Error> {
+    if std::fs::read("queue-messages.json").is_ok() {
+        let json_str = std::fs::read_to_string("queue-messages.json").unwrap();
+        let json: HashMap<u64, String> = serde_json::from_str(&json_str).unwrap();
+        Ok(json)
+    } else {
+        Ok(HashMap::new())
     }
 }
 

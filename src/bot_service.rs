@@ -74,6 +74,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         return;
     }
     user_queue.push(author.clone());
+    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(author)
         .push(" has been added to the queue. Queue size: ")
@@ -90,6 +91,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         let mut end = mat.end();
         end = end.min(start + 50);
         queued_msgs.insert(*msg.author.id.as_u64(), String::from(msg.content[start..end].trim()));
+        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
     let config: &Config = data.get::<Config>().unwrap();
     if let Some(role_id) = config.discord.assign_role_id {
