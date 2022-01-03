@@ -450,6 +450,7 @@ pub(crate) async fn handle_auto_draft(context: Context, msg: Message) {
         draft.team_a.push(captain_a_user.clone());
         draft.captain_b = Some(captain_b_user.clone());
         draft.team_b.push(captain_b_user.clone());
+        draft.current_picker = Some(draft.captain_b.as_ref().unwrap().clone());
         for i in 2..stats.len() {
             if i % 2 == 0 {
                 draft.team_b.push(user_queue.into_iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(i).unwrap().steamId).unwrap()).unwrap().clone());
