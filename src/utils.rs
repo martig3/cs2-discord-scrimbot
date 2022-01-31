@@ -31,7 +31,7 @@ pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: boo
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
     let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
-    if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
+    if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or(false) {
         true
     } else {
         if print_msg {
@@ -76,7 +76,7 @@ pub(crate) async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id
         count += 1;
         let user_id: Option<u64> = steam_id_cache.iter()
             .find_map(|(key, val)|
-                if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(*key) } else { None }
+                if format!("STEAM_1{}", &val[7..]) == stat.steamId { Some(*key) } else { None }
             );
         let user_cached: Option<User> = context.cache.user(user_id.unwrap_or(0)).await;
         let user: Option<User>;
@@ -88,14 +88,14 @@ pub(crate) async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id
         }
         if let Some(u) = user {
             if !print_map {
-                let mut user_name = String::from(u.name.clone());
+                let mut user_name = u.name.clone();
                 if user_name.len() > 12 {
                     user_name = user_name[0..9].to_string();
                     user_name.push_str("...");
                 }
                 top_ten_str.push_str(&format!("{:>3} @{} {:3.2}  {: >6}   {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", user_name.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount));
             } else {
-                let mut map = String::from(stat.map.clone());
+                let mut map = stat.map.clone();
                 map = map.replace("de_", "");
                 if map.len() > 12 {
                     map = map[0..9].to_string();
@@ -108,13 +108,13 @@ pub(crate) async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id
         };
     }
     top_ten_str.push_str("```");
-    return top_ten_str;
+    top_ten_str
 }
 
 pub(crate) async fn get_maps(context: &Context) -> Vec<String> {
     let data = context.data.write().await;
-    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
-    let cloned: Vec<String> = Vec::from(maps.clone());
+    let maps: &Vec<String> = data.get::<Maps>().unwrap();
+    let cloned: Vec<String> = maps.clone();
     cloned
 }
 

@@ -207,7 +207,7 @@ impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         if msg.author.bot { return; }
         if !msg.content.starts_with('.') { return; }
-        let command = Command::from_str(&msg.content.to_lowercase()
+        let command = Command::from_str(msg.content.to_lowercase()
             .trim()
             .split(' ')
             .take(1)
@@ -248,7 +248,7 @@ impl EventHandler for Handler {
 }
 
 #[tokio::main]
-async fn main() -> () {
+async fn main() {
     let config = read_config().await.unwrap();
     let token = &config.discord.token;
     let framework = StandardFramework::new();
@@ -350,7 +350,7 @@ async fn autoclear_queue(context: &Context) {
             task::sleep(CoreDuration::from_millis(time_between.num_milliseconds() as u64)).await;
             {
                 let mut data = context.data.write().await;
-                let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+                let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
                 user_queue.clear();
                 let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
                 queued_msgs.clear();
@@ -361,6 +361,6 @@ async fn autoclear_queue(context: &Context) {
 
 async fn get_autoclear_hour(client: &Context) -> Option<u32> {
     let data = client.data.write().await;
-    let config: &Config = &data.get::<Config>().unwrap();
+    let config: &Config = data.get::<Config>().unwrap();
     config.autoclear_hour
 }
