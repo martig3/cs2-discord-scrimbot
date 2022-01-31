@@ -130,6 +130,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     }
     let index = user_queue.iter().position(|r| r.id == msg.author.id).unwrap();
     user_queue.remove(index);
+    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" has left the queue. Queue size: ")
@@ -142,6 +143,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
     if queued_msgs.get(msg.author.id.as_u64()).is_some() {
         queued_msgs.remove(msg.author.id.as_u64());
+        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
 }
 
