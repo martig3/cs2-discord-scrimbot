@@ -848,9 +848,9 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
         println!("match_end_webhook_url:'{}'", &match_end_url);
         println!("game_server_id:'{}'", &server_id);
-        let mut auth_str = config.scrimbot_api_config.scrimbot_api_user.clone().unwrap();
+        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
         auth_str.push_str(":");
-        auth_str.push_str(&*config.scrimbot_api_config.scrimbot_api_password.clone().unwrap());
+        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
         let base64 = base64::encode(auth_str);
         let mut auth_str = String::from("Basic ");
         auth_str.push_str(&base64);
@@ -1004,19 +1004,19 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
 pub(crate) async fn handle_stats(context: Context, msg: Message) {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
-    if &config.scrimbot_api_config.scrimbot_api_url == &None {
+    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_url.is_none(){
         send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api url has not been configured", &msg.author).await;
         return;
     }
-    if &config.scrimbot_api_config.scrimbot_api_user == &None || &config.scrimbot_api_config.scrimbot_api_password == &None {
+    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.is_none() || config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.is_none() {
         send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured", &msg.author).await;
         return;
     }
-    if let Some(scrimbot_api_url) = &config.scrimbot_api_config.scrimbot_api_url {
+    if let Some(scrimbot_api_url) = config.scrimbot_api_config.clone().unwrap().scrimbot_api_url.clone() {
         let mut headers = header::HeaderMap::new();
-        let mut auth_str = config.scrimbot_api_config.scrimbot_api_user.clone().unwrap();
+        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
         auth_str.push_str(":");
-        auth_str.push_str(&*config.scrimbot_api_config.scrimbot_api_password.clone().unwrap());
+        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
         let base64 = base64::encode(auth_str);
         let mut auth_str = String::from("Basic ");
         auth_str.push_str(&base64);
