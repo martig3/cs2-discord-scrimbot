@@ -928,12 +928,12 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
         println!("match_end_webhook_url:'{}'", &match_end_url);
         println!("game_server_id:'{}'", &server_id);
-        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
-        auth_str.push(':');
-        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
-        let base64 = base64::encode(auth_str);
-        let mut auth_str = String::from("Basic ");
-        auth_str.push_str(&base64);
+        // let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.unwrap();
+        // auth_str.push(':');
+        // auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
+        // let base64 = base64::encode(auth_str);
+        // let mut auth_str = String::from("Basic ");
+        // auth_str.push_str(&base64);
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
@@ -941,7 +941,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 ("team2_steam_ids", &&team_ct),
                 ("enable_pause", &&String::from("true")),
                 ("enable_tech_pause", &&String::from("true")),
-                ("webhook_authorization_header", &&auth_str),
+                // ("webhook_authorization_header", &&auth_str),
                 ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
             .send()
