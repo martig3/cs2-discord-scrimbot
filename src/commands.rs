@@ -1276,8 +1276,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
 pub(crate) async fn handle_teamname(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let teamname_cache: &mut HashMap<u64, String> = data.get_mut::<TeamNameCache>().unwrap();
-    let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-    if split_content.len() < 2 {
+    let split_content_len = msg.content.trim().split(' ').count();
+    if split_content_len < 2 {
         send_simple_tagged_msg(&context, &msg, " invalid message formatting. Example: `.teamname TeamName`", &msg.author).await;
         return;
     }
