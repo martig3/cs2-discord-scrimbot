@@ -1235,7 +1235,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         .await
                         .unwrap();
                     if resp.status() != 200 {
-                        eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                        eprintln!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id);
                         return;
                     }
                     let content = resp.text().await.unwrap();
@@ -1257,7 +1257,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                     .await
                     .unwrap();
                 if resp.status() != 200 {
-                    eprintln!("{}", format!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id));
+                    eprintln!("HTTP error on /api/stats with following params: steamid: {}, option: top10", &steam_id);
                     return;
                 }
                 let content = resp.text().await.unwrap();
@@ -1283,7 +1283,7 @@ pub(crate) async fn handle_teamname(context: Context, msg: Message) {
     }
     let teamname = String::from(&msg.content[10..msg.content.len()]);
     if teamname.len() > 18 {
-        send_simple_tagged_msg(&context, &msg, &format!(" team name is over the character limit by {}.", teamname.len() - 18), &msg.author).await;
+        send_simple_tagged_msg(&context, &msg, &format!(" team name is over the character limit ({}/18).", teamname.len() - 18), &msg.author).await;
         return;
     }
     teamname_cache.insert(*msg.author.id.as_u64(), String::from(&teamname));
