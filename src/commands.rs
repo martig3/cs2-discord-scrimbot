@@ -8,12 +8,13 @@ use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serenity::client::Context;
 use serenity::model::channel::{Message, ReactionType};
-use serenity::model::guild::{Guild, GuildContainer};
+use serenity::model::guild::{Guild};
 use serenity::model::id::EmojiId;
 use serenity::model::user::User;
 use serenity::utils::MessageBuilder;
 
 use crate::{BotState, Config, Draft, Maps, QueueMessages, ReadyQueue, State, StateContainer, SteamIdCache, TeamNameCache, UserQueue};
+use crate::utils::{admin_check, convert_steamid_to_64, format_stats, get_maps, list_teams, list_unpicked, populate_unicode_emojis, send_simple_msg, send_simple_tagged_msg, write_to_file};
 
 struct ReactionResult {
     count: u64,
@@ -22,24 +23,24 @@ struct ReactionResult {
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
-struct Stats {
-    steamId: String,
-    totalKills: f64,
-    totalDeaths: f64,
-    totalAssists: f64,
-    kdRatio: f64,
-    map: String,
-    hs: f64,
-    rws: f64,
-    adr: f64,
-    rating: f64,
-    playCount: i64,
-    winPercentage: f64,
+pub struct Stats {
+    pub steamId: String,
+    pub totalKills: f64,
+    pub totalDeaths: f64,
+    pub totalAssists: f64,
+    pub kdRatio: f64,
+    pub map: String,
+    pub hs: f64,
+    pub rws: f64,
+    pub adr: f64,
+    pub rating: f64,
+    pub playCount: i64,
+    pub winPercentage: f64,
 }
 
 pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User) {
     let mut data = context.data.write().await;
-    let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+    let steam_id_cache: &HashMap<u64, String> = data.get::<SteamIdCache>().unwrap();
     if !steam_id_cache.contains_key(author.id.as_u64()) {
         let response = MessageBuilder::new()
             .mention(author)
@@ -52,7 +53,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         }
         return;
     }
-    let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
     if user_queue.len() >= 10 {
         let response = MessageBuilder::new()
             .mention(author)
@@ -63,7 +64,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         }
         return;
     }
-    if user_queue.contains(&author) {
+    if user_queue.contains(author) {
         let response = MessageBuilder::new()
             .mention(author)
             .push(" is already in the queue.")
@@ -74,6 +75,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         return;
     }
     user_queue.push(author.clone());
+    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(author)
         .push(" has been added to the queue. Queue size: ")
@@ -90,6 +92,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         let mut end = mat.end();
         end = end.min(start + 50);
         queued_msgs.insert(*msg.author.id.as_u64(), String::from(msg.content[start..end].trim()));
+        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
     let config: &Config = data.get::<Config>().unwrap();
     if let Some(role_id) = config.discord.assign_role_id {
@@ -127,6 +130,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     }
     let index = user_queue.iter().position(|r| r.id == msg.author.id).unwrap();
     user_queue.remove(index);
+    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" has left the queue. Queue size: ")
@@ -137,8 +141,9 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
         eprintln!("Error sending message: {:?}", why);
     }
     let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
-    if queued_msgs.get(&msg.author.id.as_u64()).is_some() {
-        queued_msgs.remove(&msg.author.id.as_u64());
+    if queued_msgs.get(msg.author.id.as_u64()).is_some() {
+        queued_msgs.remove(msg.author.id.as_u64());
+        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
 }
 
@@ -168,7 +173,7 @@ pub(crate) async fn handle_list(context: Context, msg: Message) {
 pub(crate) async fn handle_clear(context: Context, msg: Message) {
     if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
-    let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
     user_queue.clear();
     let response = MessageBuilder::new()
         .mention(&msg.author)
@@ -226,13 +231,13 @@ pub(crate) async fn handle_recover_queue(context: Context, msg: Message) {
     if !admin_check(&context, &msg, true).await { return; }
     {
         let mut data = context.data.write().await;
-        let user_queue: &mut Vec<User> = &mut data.get_mut::<UserQueue>().unwrap();
+        let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
         user_queue.clear();
-        let queue_msgs: &mut HashMap<u64, String> = &mut data.get_mut::<QueueMessages>().unwrap();
+        let queue_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
         queue_msgs.clear();
     }
     for mention in &msg.mentions {
-        handle_join(&context, &msg, &mention).await
+        handle_join(&context, &msg, mention).await
     }
 }
 
@@ -383,19 +388,129 @@ pub(crate) async fn handle_start(context: Context, msg: Message) {
         .unwrap();
     println!("Change map response - {:#?}", resp.status());
     let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-    bot_state.state = State::CaptainPick;
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    bot_state.state = State::DraftTypePick;
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     draft.captain_a = None;
     draft.captain_b = None;
     draft.team_a = Vec::new();
     draft.team_b = Vec::new();
-    send_simple_msg(&context, &msg, "Starting captain pick phase. Two users type `.captain` to start picking teams.").await;
+    send_simple_msg(&context, &msg, "Map vote complete. Select draft type using `.autodraft` or `.manualdraft`").await;
 }
 
+pub(crate) async fn handle_auto_draft(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().clone();
+    let steam_id_cache: &HashMap<u64, String> = data.get::<SteamIdCache>().unwrap();
+    let mut user_queue_steamids: HashMap<u64, String> = HashMap::new();
+    let mut user_queue_user_ids: HashMap<String, u64> = HashMap::new();
+    for user in user_queue {
+        let mut steamid = steam_id_cache.get(user.id.as_u64()).unwrap().to_string();
+        steamid = steamid.replacen("STEAM_0", "STEAM_1", 1);
+        user_queue_steamids.insert(*user.id.as_u64(), steamid.clone());
+        user_queue_user_ids.insert(steamid.clone(), *user.id.as_u64());
+    }
+    let steamids: String = user_queue_steamids.into_values()
+        .map(|s| format!("{},", s))
+        .collect();
+
+    let config: &Config = data.get::<Config>().unwrap();
+    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_user == None || config.scrimbot_api_config.clone().unwrap().scrimbot_api_password == None {
+        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured. This option is unavailable.", &msg.author).await;
+        return;
+    }
+    if let Some(scrimbot_api_url) = &config.scrimbot_api_config.clone().unwrap().scrimbot_api_url {
+        let mut headers = header::HeaderMap::new();
+        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
+        auth_str.push(':');
+        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
+        let base64 = base64::encode(auth_str);
+        let mut auth_str = String::from("Basic ");
+        auth_str.push_str(&base64);
+        headers.insert("Authorization", auth_str.parse().unwrap());
+        let client = reqwest::Client::builder().default_headers(headers).build().unwrap();
+        let resp = client
+            .get(&format!("{}/api/stats", scrimbot_api_url))
+            .query(&[("steamids", &steamids), ("option", &"players".to_string())])
+            .send()
+            .await
+            .unwrap();
+        if resp.status() != 200 {
+            eprintln!("{}", format!("HTTP error on /api/stats with following params: steamids: {}, option: players", &steamids));
+            return;
+        }
+        let content = resp.text().await.unwrap();
+        let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
+        if stats.is_empty() {
+            send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for any players, please use another option", &msg.author).await;
+            return;
+        }
+        if stats.len() < 2 {
+            send_simple_tagged_msg(&context, &msg, " sorry, unable to find stats for at least 2 players. Please use another option", &msg.author).await;
+            return;
+        }
+        let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
+        let captain_a_user = user_queue.iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(0).unwrap().steamId).unwrap()).unwrap();
+        let captain_b_user = user_queue.iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(1).unwrap().steamId).unwrap()).unwrap();
+        draft.captain_a = Some(captain_a_user.clone());
+        draft.team_a.push(captain_a_user.clone());
+        draft.captain_b = Some(captain_b_user.clone());
+        draft.team_b.push(captain_b_user.clone());
+        draft.current_picker = Some(draft.captain_b.as_ref().unwrap().clone());
+        for i in 2..stats.len() {
+            if i % 2 == 0 {
+                draft.team_b.push(user_queue.iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(i).unwrap().steamId).unwrap()).unwrap().clone());
+                draft.current_picker = Some(draft.captain_a.as_ref().unwrap().clone())
+            } else {
+                draft.team_a.push(user_queue.iter().find(|user| user.id.as_u64() == user_queue_user_ids.get(&stats.get(i).unwrap().steamId).unwrap()).unwrap().clone());
+                draft.current_picker = Some(draft.captain_b.as_ref().unwrap().clone())
+            }
+        }
+        if draft.team_a.len() != 5 || draft.team_b.len() != 5 {
+            let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+            bot_state.state = State::Draft;
+            let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
+            send_simple_msg(&context, &msg, " unable to find stats for all players. Continue draft and pick the remaining players manually.").await;
+            let response = MessageBuilder::new()
+                .push("It is ")
+                .mention(&draft.current_picker.clone().unwrap())
+                .push(" turn to `.pick @<user>`")
+                .build();
+            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
+                eprintln!("Error sending message: {:?}", why);
+            }
+            let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
+            let draft: &Draft = data.get::<Draft>().unwrap();
+            let teamname_cache = data.get::<TeamNameCache>().unwrap();
+            let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
+            let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
+            list_unpicked(user_queue, draft, &context, &msg, team_a_name, team_b_name).await;
+        } else {
+            let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+            bot_state.state = State::SidePick;
+            let draft: &Draft = data.get::<Draft>().unwrap();
+            let teamname_cache = data.get::<TeamNameCache>().unwrap();
+            let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
+            let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
+                .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
+            list_teams(draft, &context, &msg, team_a_name, team_b_name).await;
+            send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &draft.captain_b.as_ref().unwrap().clone()).await;
+        }
+    }
+}
+
+pub(crate) async fn handle_manual_draft(context: Context, msg: Message) {
+    let mut data = context.data.write().await;
+    let mut bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
+    bot_state.state = State::CaptainPick;
+    send_simple_msg(&context, &msg, "Manual draft selected. Starting captain pick phase. Two users type `.captain` to start picking teams.").await;
+}
 
 pub(crate) async fn handle_captain(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if bot_state.state != State::CaptainPick {
         send_simple_tagged_msg(&context, &msg, " command ignored, not in the captain pick phase", &msg.author).await;
         return;
@@ -405,7 +520,7 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " command ignored, you are not in the queue", &msg.author).await;
         return;
     }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     if draft.captain_a != None && &msg.author == draft.captain_a.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you're already a captain!", &msg.author).await;
         return;
@@ -439,22 +554,22 @@ pub(crate) async fn handle_captain(context: Context, msg: Message) {
         if let Err(why) = msg.channel_id.say(&context.http, &response).await {
             eprintln!("Error sending message: {:?}", why);
         }
-        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Draft;
-        let user_queue: &Vec<User> = &mut data.get::<UserQueue>().unwrap();
-        let draft: &Draft = &mut data.get::<Draft>().unwrap();
+        let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
+        let draft: &Draft = data.get::<Draft>().unwrap();
         let teamname_cache = data.get::<TeamNameCache>().unwrap();
         let team_a_name = teamname_cache.get(draft.captain_a.as_ref().unwrap().id.as_u64())
             .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
         let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
             .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
-        list_unpicked(&user_queue, &draft, &context, &msg, team_a_name, team_b_name).await;
+        list_unpicked(user_queue, draft, &context, &msg, team_a_name, team_b_name).await;
     }
 }
 
 pub(crate) async fn handle_pick(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if bot_state.state != State::Draft {
         send_simple_tagged_msg(&context, &msg, " it is not currently the draft phase", &msg.author).await;
         return;
@@ -464,7 +579,7 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         return;
     }
     let picked = msg.mentions[0].clone();
-    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap().to_vec();
+    let user_queue: Vec<User> = data.get::<UserQueue>().unwrap().clone();
     if !user_queue.contains(&picked) {
         send_simple_tagged_msg(&context, &msg, " this user is not in the queue", &msg.author).await;
         return;
@@ -493,24 +608,24 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
         .unwrap_or(&draft.captain_a.as_ref().unwrap().name));
     let team_b_name = String::from(teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
         .unwrap_or(&draft.captain_b.as_ref().unwrap().name));
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     if draft.captain_a.as_ref().unwrap() == &current_picker {
         send_simple_tagged_msg(&context, &msg, &format!(" has been added to Team {}", team_a_name), &picked).await;
         draft.team_a.push(picked);
         draft.current_picker = draft.captain_b.clone();
-        list_unpicked(&user_queue, &draft, &context, &msg, &team_a_name, &team_b_name).await;
+        list_unpicked(&user_queue, draft, &context, &msg, &team_a_name, &team_b_name).await;
     } else {
         send_simple_tagged_msg(&context, &msg, &format!(" has been added to Team {}", team_b_name), &picked).await;
         draft.team_b.push(picked);
         draft.current_picker = draft.captain_a.clone();
-        list_unpicked(&user_queue, &draft, &context, &msg, &team_a_name, &team_b_name).await;
+        list_unpicked(&user_queue, draft, &context, &msg, &team_a_name, &team_b_name).await;
     }
     if draft.team_a.len() == 5 && draft.team_b.len() == 5 {
         let captain_b = draft.captain_b.clone().unwrap();
-        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
         bot_state.state = State::SidePick;
         let sidepick_msg = send_simple_tagged_msg(&context, &msg, " type `.ct` or `.t` to pick a starting side.", &captain_b).await;
-        let config: &mut Config = &mut data.get_mut::<Config>().unwrap();
+        let config: &mut Config = data.get_mut::<Config>().unwrap();
         if let Some(msg) = sidepick_msg {
             if let Some(emote_ct_id) = &config.discord.emote_ct_id {
                 if let Some(emote_ct_name) = &config.discord.emote_ct_name {
@@ -530,73 +645,46 @@ pub(crate) async fn handle_pick(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn list_unpicked(user_queue: &Vec<User>, draft: &Draft, context: &Context, msg: &Message, team_a_name: &String, team_b_name: &String) {
-    let remaining_users: String = user_queue
-        .iter()
-        .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_a: String = draft.team_a
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_b: String = draft.team_b
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let response = MessageBuilder::new()
-        .push_bold_line(format!("Team {}:", team_a_name))
-        .push_line(team_a)
-        .push_bold_line(format!("Team {}:", team_b_name))
-        .push_line(team_b)
-        .push_bold_line("Remaining players: ")
-        .push_line(remaining_users)
-        .build();
-
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        eprintln!("Error sending message: {:?}", why);
-    }
-}
 
 pub(crate) async fn handle_ct_option(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if bot_state.state != State::SidePick {
         send_simple_tagged_msg(&context, &msg, " it is not currently the side pick phase", &msg.author).await;
         return;
     }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     if &msg.author != draft.captain_b.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you are not Captain B", &msg.author).await;
         return;
     }
     draft.team_b_start_side = String::from("ct");
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::Ready;
     send_simple_msg(&context, &msg, "Setup is completed. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server and match will immediately start.").await;
 }
 
 pub(crate) async fn handle_t_option(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     if bot_state.state != State::SidePick {
         send_simple_tagged_msg(&context, &msg, " it is not currently the side pick phase", &msg.author).await;
         return;
     }
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     if &msg.author != draft.captain_b.as_ref().unwrap() {
         send_simple_tagged_msg(&context, &msg, " you are not Captain B", &msg.author).await;
         return;
     }
     draft.team_b_start_side = String::from("t");
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::Ready;
     send_simple_msg(&context, &msg, "Setup is completed. Type `.ready` when you are able start playing. This is a final ready check, once all players are `.ready` the server and match will immediately start.").await;
 }
 
 pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let steam_id_cache: &mut HashMap<u64, String> = &mut data.get_mut::<SteamIdCache>().unwrap();
+    let steam_id_cache: &mut HashMap<u64, String> = data.get_mut::<SteamIdCache>().unwrap();
     let split_content = msg.content.trim().split(' ').take(2).collect::<Vec<_>>();
     if split_content.len() == 1 {
         send_simple_tagged_msg(&context, &msg, " please check the command formatting. There must be a space in between `.steamid` and your steamid. \
@@ -624,7 +712,6 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
     if let Err(why) = msg.channel_id.say(&context.http, &response).await {
         eprintln!("Error sending message: {:?}", why);
     }
-
 }
 
 pub(crate) async fn handle_map_list(context: Context, msg: Message) {
@@ -687,7 +774,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
         }
         return;
     }
-    let map_name: String = String::from(msg.content.trim().split(" ").take(2).collect::<Vec<_>>()[1]);
+    let map_name: String = String::from(msg.content.trim().split(' ').take(2).collect::<Vec<_>>()[1]);
     if maps.contains(&map_name) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
@@ -750,13 +837,6 @@ pub(crate) async fn handle_unknown(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn write_to_file(path: String, content: String) {
-    let mut error_string = String::from("Error writing to ");
-    error_string.push_str(&path);
-    std::fs::write(path, content)
-        .expect(&error_string);
-}
-
 pub(crate) async fn handle_ready(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get_mut::<BotState>().unwrap();
@@ -764,12 +844,12 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
         return;
     }
-    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap();
+    let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
     if !user_queue.contains(&msg.author) {
         send_simple_tagged_msg(&context, &msg, " you are not in the queue.", &msg.author).await;
         return;
     }
-    let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
+    let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
     if ready_queue.contains(&msg.author) {
         let response = MessageBuilder::new()
             .mention(&msg.author)
@@ -793,8 +873,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
     if ready_queue.len() >= 10 {
         println!("Launching server...");
-        let draft: &Draft = &data.get::<Draft>().unwrap();
-        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+        let draft: &Draft = data.get::<Draft>().unwrap();
+        let steam_id_cache: &HashMap<u64, String> = data.get::<SteamIdCache>().unwrap();
         let mut team_a_steam_ids: Vec<String> = draft.team_a
             .iter()
             .map(|u| steam_id_cache.get(u.id.as_u64()).unwrap().to_string())
@@ -844,16 +924,16 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         let dathost_username = &config.dathost.username;
         let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
         let server_id = &config.server.id;
-        let match_end_url = if &config.dathost.match_end_url == &None { "" } else { &config.dathost.match_end_url.as_ref().unwrap() };
+        let match_end_url = if config.dathost.match_end_url == None { "" } else { config.dathost.match_end_url.as_ref().unwrap() };
         let start_match_url = String::from("https://dathost.net/api/0.1/matches");
         println!("match_end_webhook_url:'{}'", &match_end_url);
         println!("game_server_id:'{}'", &server_id);
-        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
-        auth_str.push_str(":");
-        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
-        let base64 = base64::encode(auth_str);
-        let mut auth_str = String::from("Basic ");
-        auth_str.push_str(&base64);
+        // let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.unwrap();
+        // auth_str.push(':');
+        // auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
+        // let base64 = base64::encode(auth_str);
+        // let mut auth_str = String::from("Basic ");
+        // auth_str.push_str(&base64);
         let resp = client
             .post(&start_match_url)
             .form(&[("game_server_id", &server_id),
@@ -861,7 +941,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
                 ("team2_steam_ids", &&team_ct),
                 ("enable_pause", &&String::from("true")),
                 ("enable_tech_pause", &&String::from("true")),
-                ("webhook_authorization_header", &&auth_str),
+                // ("webhook_authorization_header", &&auth_str),
                 ("match_end_webhook_url", &&match_end_url.to_string())])
             .basic_auth(&dathost_username, dathost_password)
             .send()
@@ -871,8 +951,8 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
 
         if resp.status().is_success() {
             let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
-            let port_start = &config.server.url.find(':').unwrap_or_else(|| 0 as usize) + 1;
-            let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or_else(|_| 0) + 1;
+            let port_start = &config.server.url.find(':').unwrap_or(0_usize) + 1;
+            let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()]).parse::<i64>().unwrap_or(0) + 1;
             let gotv_url = format!("{}{}", &config.server.url[0..port_start], gotv_port);
             send_simple_msg(&context, &msg, &format!("Server has started.\n\n**Connection info:**\nLink: {}\nConsole: \
             `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`", steam_web_url, &config.server.url, &format!("steam://connect/{}", gotv_url), gotv_url)).await;
@@ -880,7 +960,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             send_simple_msg(&context, &msg, &format!("Server failed to start, match POST response code: {}", &resp.status().as_str())).await;
         }
         let draft: &Draft = data.get::<Draft>().unwrap();
-        let config: &Config = &data.get::<Config>().unwrap();
+        let config: &Config = data.get::<Config>().unwrap();
         if let Some(team_a_channel_id) = config.discord.team_a_channel_id {
             for user in &draft.team_a {
                 if let Some(guild) = &msg.guild(&context.cache).await {
@@ -906,7 +986,7 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
             let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
             let team_a_name = teamname_cache.get(&draft.captain_a.as_ref().unwrap().id.as_u64())
                 .unwrap_or(default_team_a_name);
-            let team_b_name = teamname_cache.get(&draft.captain_b.as_ref().unwrap().id.as_u64())
+            let team_b_name = teamname_cache.get(draft.captain_b.as_ref().unwrap().id.as_u64())
                 .unwrap_or(default_team_b_name);
             let team_one_command;
             let team_two_command;
@@ -945,15 +1025,15 @@ pub(crate) async fn handle_ready(context: Context, msg: Message) {
         user_queue.clear();
         let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
         ready_queue.clear();
-        let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+        let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
         draft.team_a = vec![];
         draft.team_b = vec![];
         draft.captain_a = None;
         draft.captain_b = None;
         draft.current_picker = None;
-        let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+        let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
         bot_state.state = State::Queue;
-        let queue_msgs: &mut HashMap<u64, String> = &mut data.get_mut::<QueueMessages>().unwrap();
+        let queue_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
         queue_msgs.clear();
     }
 }
@@ -965,12 +1045,12 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
         send_simple_tagged_msg(&context, &msg, " command ignored. The draft has not been completed yet", &msg.author).await;
         return;
     }
-    let user_queue: &Vec<User> = &data.get::<UserQueue>().unwrap();
+    let user_queue: &Vec<User> = data.get::<UserQueue>().unwrap();
     if !user_queue.contains(&msg.author) {
         send_simple_tagged_msg(&context, &msg, " you are not in the queue.", &msg.author).await;
         return;
     }
-    let ready_queue: &mut Vec<User> = &mut data.get_mut::<ReadyQueue>().unwrap();
+    let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
     let index = ready_queue.iter().position(|r| r.id == msg.author.id).unwrap();
     ready_queue.remove(index);
     send_simple_tagged_msg(&context, &msg, " is no longer `.ready`.", &msg.author).await;
@@ -979,7 +1059,7 @@ pub(crate) async fn handle_unready(context: Context, msg: Message) {
 pub(crate) async fn handle_cancel(context: Context, msg: Message) {
     if !admin_check(&context, &msg, true).await { return; }
     let mut data = context.data.write().await;
-    let bot_state: &StateContainer = &data.get::<BotState>().unwrap();
+    let bot_state: &StateContainer = data.get::<BotState>().unwrap();
     if bot_state.state == State::Queue {
         send_simple_tagged_msg(&context, &msg, " command only valid during `.start` process", &msg.author).await;
         return;
@@ -990,13 +1070,13 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
     }
     let ready_queue: &mut Vec<User> = data.get_mut::<ReadyQueue>().unwrap();
     ready_queue.clear();
-    let draft: &mut Draft = &mut data.get_mut::<Draft>().unwrap();
+    let draft: &mut Draft = data.get_mut::<Draft>().unwrap();
     draft.team_a = vec![];
     draft.team_b = vec![];
     draft.captain_a = None;
     draft.captain_b = None;
     draft.current_picker = None;
-    let bot_state: &mut StateContainer = &mut data.get_mut::<BotState>().unwrap();
+    let bot_state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
     bot_state.state = State::Queue;
     send_simple_tagged_msg(&context, &msg, " `.start` process cancelled.", &msg.author).await;
 }
@@ -1004,42 +1084,46 @@ pub(crate) async fn handle_cancel(context: Context, msg: Message) {
 pub(crate) async fn handle_stats(context: Context, msg: Message) {
     let data = context.data.write().await;
     let config: &Config = data.get::<Config>().unwrap();
-    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_url.is_none(){
-        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api url has not been configured", &msg.author).await;
+    if config.scrimbot_api_config.clone().is_none() {
+        send_simple_tagged_msg(&context, &msg, " scrimbot-api has not been configured", &msg.author).await;
         return;
     }
-    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.is_none() || config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.is_none() {
-        send_simple_tagged_msg(&context, &msg, " sorry, the scrimbot-api user/password has not been configured", &msg.author).await;
+    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_url == None {
+        send_simple_tagged_msg(&context, &msg, " scrimbot-api url has not been configured", &msg.author).await;
         return;
     }
-    if let Some(scrimbot_api_url) = config.scrimbot_api_config.clone().unwrap().scrimbot_api_url.clone() {
+    if config.scrimbot_api_config.clone().unwrap().scrimbot_api_user == None || config.scrimbot_api_config.clone().unwrap().scrimbot_api_password == None {
+        send_simple_tagged_msg(&context, &msg, " scrimbot-api user/password has not been configured", &msg.author).await;
+        return;
+    }
+    if let Some(scrimbot_api_url) = &config.scrimbot_api_config.clone().unwrap().scrimbot_api_url {
         let mut headers = header::HeaderMap::new();
-        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.clone().unwrap();
-        auth_str.push_str(":");
-        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.clone().unwrap());
+        let mut auth_str = config.scrimbot_api_config.clone().unwrap().scrimbot_api_user.unwrap();
+        auth_str.push(':');
+        auth_str.push_str(&*config.scrimbot_api_config.clone().unwrap().scrimbot_api_password.unwrap());
         let base64 = base64::encode(auth_str);
         let mut auth_str = String::from("Basic ");
         auth_str.push_str(&base64);
         headers.insert("Authorization", auth_str.parse().unwrap());
         let client = reqwest::Client::builder().default_headers(headers).build().unwrap();
-        let steam_id_cache: &HashMap<u64, String> = &data.get::<SteamIdCache>().unwrap();
+        let steam_id_cache: &HashMap<u64, String> = data.get::<SteamIdCache>().unwrap();
         if steam_id_cache.get(msg.author.id.as_u64()).is_none() {
             send_simple_tagged_msg(&context, &msg, " cannot find your steamId, please assign one using the `.steamid` command", &msg.author).await;
             return;
         }
         let mut steam_id = steam_id_cache.get(msg.author.id.as_u64()).unwrap().clone();
         steam_id.replace_range(6..7, "1");
-        let map_idx_start = &msg.content.find("\"");
-        let map_idx_end = &msg.content.rfind("\"");
+        let map_idx_start = &msg.content.find('\"');
+        let map_idx_end = &msg.content.rfind('\"');
         let mut map_name = String::new();
         if map_idx_start != &None && map_idx_end != &None {
             map_name = String::from(&msg.content[map_idx_start.unwrap() + 1..map_idx_end.unwrap()])
         }
         let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
-        if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with("\"")) {
+        if split_content.len() < 2 || (split_content.len() > 1 && split_content[1].starts_with('\"')) {
             let resp = client
                 .get(&format!("{}/api/stats", scrimbot_api_url))
-                .query(&[("steamid", &steam_id), (&"map", &map_name)])
+                .query(&[("steamid", &steam_id), ("map", &map_name)])
                 .send()
                 .await
                 .unwrap();
@@ -1053,7 +1137,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
                 return;
             }
-            let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+            let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
             send_simple_tagged_msg(&context, &msg, &top_ten_str, &msg.author).await;
             return;
         }
@@ -1076,7 +1160,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 send_simple_tagged_msg(&context, &msg, " sorry, no statistics found for your discord user (yet!)", &msg.author).await;
                 return;
             }
-            let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
+            let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
             send_simple_tagged_msg(&context, &msg, &top_ten_str, &msg.author).await;
             return;
         }
@@ -1084,7 +1168,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             if split_content.len() > 2 && !split_content[2].starts_with("\"") {
                 let month_regex = Regex::new("\\dm").unwrap();
                 let month_arg = split_content[2];
-                if month_regex.is_match(&month_arg) {
+                if month_regex.is_match(month_arg) {
                     let resp = client
                         .get(&format!("{}/api/stats", scrimbot_api_url))
                         .query(&[("steamid", &steam_id), ("option", &"top10".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
@@ -1101,8 +1185,8 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         send_simple_tagged_msg(&context, &msg, " sorry, no statistics found", &msg.author).await;
                         return;
                     }
-                    let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), false).await;
-                    if map_name != "" {
+                    let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), false).await;
+                    if !map_name.is_empty() {
                         map_name = format!("`{}`", &map_name)
                     }
                     send_simple_tagged_msg(&context, &msg, &format!(" Top 10 - {} Month(s) {}:\n{}", &month_arg, &map_name, &top_ten_str), &msg.author).await;
@@ -1139,7 +1223,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 if month_regex.is_match(&month_arg) {
                     let resp = client
                         .get(&format!("{}/api/stats", scrimbot_api_url))
-                        .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), (&"map", &map_name)])
+                        .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("length", &month_arg.get(0..1).unwrap().to_string()), ("map", &map_name)])
                         .send()
                         .await
                         .unwrap();
@@ -1153,16 +1237,15 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         send_simple_tagged_msg(&context, &msg, " sorry, something went wrong retrieving stats", &msg.author).await;
                         return;
                     }
-                    let top_ten_str = format_stats(&stats, &context, &steam_id_cache, &msg.guild_id.unwrap().as_u64(), true).await;
+                    let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
                     send_simple_tagged_msg(&context, &msg, &format!(" Top 10 (per map) - {} Month(s):\n{}", &month_arg, &top_ten_str), &msg.author).await;
                 } else {
                     send_simple_tagged_msg(&context, &msg, " month parameter is not properly formatted. Example: `.stats top10 1m`", &msg.author).await;
                 }
-                return;
             } else {
                 let resp = client
                     .get(&format!("{}/api/stats", scrimbot_api_url))
-                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), (&"map", &map_name)])
+                    .query(&[("steamid", &steam_id), ("option", &"maps".to_string()), ("map", &map_name)])
                     .send()
                     .await
                     .unwrap();
@@ -1178,7 +1261,6 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                 }
                 let top_ten_str = format_stats(&stats, &context, steam_id_cache, msg.guild_id.unwrap().as_u64(), true).await;
                 send_simple_tagged_msg(&context, &msg, &format!(" Top 10 (per map):\n{}", &top_ten_str), &msg.author).await;
-                return;
             }
         }
     }
@@ -1186,7 +1268,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
 
 pub(crate) async fn handle_teamname(context: Context, msg: Message) {
     let mut data = context.data.write().await;
-    let teamname_cache: &mut HashMap<u64, String> = &mut data.get_mut::<TeamNameCache>().unwrap();
+    let teamname_cache: &mut HashMap<u64, String> = data.get_mut::<TeamNameCache>().unwrap();
     let split_content = msg.content.trim().split(' ').collect::<Vec<_>>();
     if split_content.len() < 2 {
         send_simple_tagged_msg(&context, &msg, " invalid message formatting. Example: `.teamname TeamName`", &msg.author).await;
@@ -1200,159 +1282,4 @@ pub(crate) async fn handle_teamname(context: Context, msg: Message) {
     teamname_cache.insert(*msg.author.id.as_u64(), String::from(&teamname));
     write_to_file(String::from("teamnames.json"), serde_json::to_string(teamname_cache).unwrap()).await;
     send_simple_tagged_msg(&context, &msg, &format!(" custom team name successfully set to `{}`", &teamname), &msg.author).await;
-}
-
-pub(crate) async fn send_simple_msg(context: &Context, msg: &Message, text: &str) {
-    let response = MessageBuilder::new()
-        .push(text)
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        eprintln!("Error sending message: {:?}", why);
-    }
-}
-
-pub(crate) async fn send_simple_tagged_msg(context: &Context, msg: &Message, text: &str, mentioned: &User) -> Option<Message> {
-    let response = MessageBuilder::new()
-        .mention(mentioned)
-        .push(text)
-        .build();
-    if let Ok(m) = msg.channel_id.say(&context.http, &response).await {
-        Some(m)
-    } else {
-        eprintln!("Error sending message");
-        None
-    }
-}
-
-pub(crate) async fn admin_check(context: &Context, msg: &Message, print_msg: bool) -> bool {
-    let data = context.data.write().await;
-    let config: &Config = data.get::<Config>().unwrap();
-    let role_name = context.cache.role(msg.guild_id.unwrap(), config.discord.admin_role_id).await.unwrap().name;
-    if msg.author.has_role(&context.http, GuildContainer::from(msg.guild_id.unwrap()), config.discord.admin_role_id).await.unwrap_or_else(|_| false) {
-        true
-    } else {
-        if print_msg {
-            let response = MessageBuilder::new()
-                .mention(&msg.author)
-                .push(" this command requires the '")
-                .push(role_name)
-                .push("' role.")
-                .build();
-            if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                eprintln!("Error sending message: {:?}", why);
-            }
-        }
-        false
-    }
-}
-
-async fn format_stats(stats: &Vec<Stats>, context: &Context, steam_id_cache: &HashMap<u64, String>, &guild_id: &u64, print_map: bool) -> String {
-    let mut top_ten_str: String = String::from("");
-    top_ten_str.push_str("```md\n");
-    if stats.len() == 1 {
-        let mut map = String::from(stats[0].map.clone());
-        if map != "" {
-            map = map.replace("de_", "");
-            if map.len() > 12 {
-                map = map[0..9].to_string();
-                map.push_str("...");
-            }
-            top_ten_str.push_str(&*format!("Map: {:<12} K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n", map));
-        } else {
-            top_ten_str.push_str("                  K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
-        }
-    } else if !print_map {
-        top_ten_str.push_str("     Player       K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
-    } else {
-        top_ten_str.push_str("     Maps         K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n");
-    }
-    top_ten_str.push_str("-----------------------------------------------------------------------------\n");
-    let guild = Guild::get(&context.http, guild_id).await.unwrap();
-    let mut count = 0;
-    for stat in stats {
-        count += 1;
-        let user_id: Option<u64> = steam_id_cache.iter()
-            .find_map(|(key, val)|
-                if &format!("STEAM_1{}", &val[7..]) == &stat.steamId { Some(*key) } else { None }
-            );
-        let user_cached: Option<User> = context.cache.user(user_id.unwrap_or(0)).await;
-        let user: Option<User>;
-        if let Some(u) = user_cached {
-            user = Some(u)
-        } else {
-            let member = guild.member(&context.http, user_id.unwrap_or(0)).await;
-            if let Ok(m) = member { user = Some(m.user) } else { user = None };
-        }
-        if let Some(u) = user {
-            if !print_map {
-                let mut user_name = String::from(u.name.clone());
-                if user_name.len() > 12 {
-                    user_name = user_name[0..9].to_string();
-                    user_name.push_str("...");
-                }
-                top_ten_str.push_str(&format!("{:>3} @{} {:3.2}  {: >6}   {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", user_name.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount));
-            } else {
-                let mut map = String::from(stat.map.clone());
-                map = map.replace("de_", "");
-                if map.len() > 12 {
-                    map = map[0..9].to_string();
-                    map.push_str("...");
-                }
-                top_ten_str.push_str(&format!("{:>3}  {} {:3.2}   {: >6}  {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n", format!("{}.", count.to_string()), format!("{: <12}", map.to_owned()), stat.kdRatio, format!("{:.2}", &stat.adr), format!("{:.2}", &stat.rws), stat.rating, stat.hs, stat.winPercentage, stat.playCount))
-            }
-        } else {
-            top_ten_str.push_str(&format!("{:>3} @Error!\n", format!("{}.", count.to_string())))
-        };
-    }
-    top_ten_str.push_str("```");
-    return top_ten_str;
-}
-
-pub(crate) async fn get_maps(context: &Context) -> Vec<String> {
-    let data = context.data.write().await;
-    let maps: &Vec<String> = &data.get::<Maps>().unwrap();
-    let cloned: Vec<String> = Vec::from(maps.clone());
-    cloned
-}
-
-pub(crate) async fn populate_unicode_emojis() -> HashMap<char, String> {
-// I hate this implementation and I deserve to be scolded
-// in my defense however, you have to provide unicode emojis to the api
-// if Discord's API allowed their shortcuts i.e. ":smile:" instead that would have been more intuitive
-    let mut map = HashMap::new();
-    map.insert('a', String::from("🇦"));
-    map.insert('b', String::from("🇧"));
-    map.insert('c', String::from("🇨"));
-    map.insert('d', String::from("🇩"));
-    map.insert('e', String::from("🇪"));
-    map.insert('f', String::from("🇫"));
-    map.insert('g', String::from("🇬"));
-    map.insert('h', String::from("🇭"));
-    map.insert('i', String::from("🇮"));
-    map.insert('j', String::from("🇯"));
-    map.insert('k', String::from("🇰"));
-    map.insert('l', String::from("🇱"));
-    map.insert('m', String::from("🇲"));
-    map.insert('n', String::from("🇳"));
-    map.insert('o', String::from("🇴"));
-    map.insert('p', String::from("🇵"));
-    map.insert('q', String::from("🇶"));
-    map.insert('r', String::from("🇷"));
-    map.insert('s', String::from("🇸"));
-    map.insert('t', String::from("🇹"));
-    map.insert('u', String::from("🇺"));
-    map.insert('v', String::from("🇻"));
-    map.insert('w', String::from("🇼"));
-    map.insert('x', String::from("🇽"));
-    map.insert('y', String::from("🇾"));
-    map.insert('z', String::from("🇿"));
-    map
-}
-
-pub fn convert_steamid_to_64(steamid: &String) -> u64 {
-    let steamid_split: Vec<&str> = steamid.split(":").collect();
-    let y = steamid_split[1].parse::<i64>().unwrap();
-    let z = steamid_split[2].parse::<i64>().unwrap();
-    let steamid_64 = (z * 2) + y + 76561197960265728;
-    return steamid_64 as u64;
 }
