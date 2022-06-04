@@ -22,10 +22,7 @@ Supported server hosting platforms are:
 
 ## Setup
 
-No release binaries yet; so clone the repo, create a `config.yaml` file in the root folder (see example below) and run
-using standard `cargo run`
-
-**Note:** Make sure to only allow the bot to listen/read messages in one channel only.
+Run your platform executable with the following `config.yaml` file in the root directory:
 
 ```yaml
 autoclear_hour: <0-24> -- optional
@@ -53,6 +50,7 @@ scrimbot_api_config: -- optional, experimental section
   scrimbot_api_user: <scrimbot-api username>
   scrimbot_api_password: <scrimbot-api password>
 ```
+**Note:** Make sure to only allow the bot to listen/read messages in one channel only via the discord server settings -> integrations options.
 
 ## Commands
 
