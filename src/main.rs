@@ -282,14 +282,14 @@ async fn main() {
 }
 
 async fn read_config() -> Result<Config, serde_yaml::Error> {
-    let yaml = std::fs::read_to_string("config.yaml").unwrap();
+    let yaml = std::fs::read_to_string("config/config.yaml").unwrap();
     let config: Config = serde_yaml::from_str(&yaml)?;
     Ok(config)
 }
 
 async fn read_steam_ids() -> Result<HashMap<u64, String>, serde_json::Error> {
-    if std::fs::read("steam-ids.json").is_ok() {
-        let json_str = std::fs::read_to_string("steam-ids.json").unwrap();
+    if std::fs::read("../data/steam-ids.json").is_ok() {
+        let json_str = std::fs::read_to_string("../data/steam-ids.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
@@ -298,8 +298,8 @@ async fn read_steam_ids() -> Result<HashMap<u64, String>, serde_json::Error> {
 }
 
 async fn read_teamnames() -> Result<HashMap<u64, String>, serde_json::Error> {
-    if std::fs::read("teamnames.json").is_ok() {
-        let json_str = std::fs::read_to_string("teamnames.json").unwrap();
+    if std::fs::read("../data/teamnames.json").is_ok() {
+        let json_str = std::fs::read_to_string("../data/teamnames.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
@@ -308,8 +308,8 @@ async fn read_teamnames() -> Result<HashMap<u64, String>, serde_json::Error> {
 }
 
 async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
-    if std::fs::read("maps.json").is_ok() {
-        let json_str = std::fs::read_to_string("maps.json").unwrap();
+    if std::fs::read("../data/maps.json").is_ok() {
+        let json_str = std::fs::read_to_string("../data/maps.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
@@ -318,8 +318,8 @@ async fn read_maps() -> Result<Vec<String>, serde_json::Error> {
 }
 
 async fn read_queue() -> Result<Vec<User>, serde_json::Error> {
-    if std::fs::read("queue.json").is_ok() {
-        let json_str = std::fs::read_to_string("queue.json").unwrap();
+    if std::fs::read("../data/queue.json").is_ok() {
+        let json_str = std::fs::read_to_string("../data/queue.json").unwrap();
         let json = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
@@ -328,8 +328,8 @@ async fn read_queue() -> Result<Vec<User>, serde_json::Error> {
 }
 
 async fn read_queue_msgs() -> Result<HashMap<u64, String>, serde_json::Error> {
-    if std::fs::read("queue-messages.json").is_ok() {
-        let json_str = std::fs::read_to_string("queue-messages.json").unwrap();
+    if std::fs::read("../data/queue-messages.json").is_ok() {
+        let json_str = std::fs::read_to_string("../data/queue-messages.json").unwrap();
         let json: HashMap<u64, String> = serde_json::from_str(&json_str).unwrap();
         Ok(json)
     } else {
