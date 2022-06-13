@@ -1,7 +1,7 @@
 FROM rust:1.60 as build
 
 # create a new empty shell project
-RUN USER=root cargo new --bin csgo-discord-scrimbot
+RUN cargo new --bin csgo-discord-scrimbot
 WORKDIR /csgo-discord-scrimbot
 
 COPY . .
