@@ -22,7 +22,7 @@ Supported server hosting platforms are:
 
 ## Setup
 
-Run your platform executable with the following `config.yaml` file in the root directory:
+Run your platform executable with the following `config/config.yaml` file:
 
 ```yaml
 autoclear_hour: <0-24> -- optional

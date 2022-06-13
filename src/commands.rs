@@ -75,7 +75,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         return;
     }
     user_queue.push(author.clone());
-    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
+    write_to_file(String::from("../data/queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(author)
         .push(" has been added to the queue. Queue size: ")
@@ -92,7 +92,7 @@ pub(crate) async fn handle_join(context: &Context, msg: &Message, author: &User)
         let mut end = mat.end();
         end = end.min(start + 50);
         queued_msgs.insert(*msg.author.id.as_u64(), String::from(msg.content[start..end].trim()));
-        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
+        write_to_file(String::from("../data/queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
     let config: &Config = data.get::<Config>().unwrap();
     if let Some(role_id) = config.discord.assign_role_id {
@@ -130,7 +130,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     }
     let index = user_queue.iter().position(|r| r.id == msg.author.id).unwrap();
     user_queue.remove(index);
-    write_to_file(String::from("queue.json"), serde_json::to_string(user_queue).unwrap()).await;
+    write_to_file(String::from("../data/queue.json"), serde_json::to_string(user_queue).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" has left the queue. Queue size: ")
@@ -143,7 +143,7 @@ pub(crate) async fn handle_leave(context: Context, msg: Message) {
     let queued_msgs: &mut HashMap<u64, String> = data.get_mut::<QueueMessages>().unwrap();
     if queued_msgs.get(msg.author.id.as_u64()).is_some() {
         queued_msgs.remove(msg.author.id.as_u64());
-        write_to_file(String::from("queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
+        write_to_file(String::from("../data/queue-messages.json"), serde_json::to_string(queued_msgs).unwrap()).await;
     }
 }
 
@@ -698,7 +698,7 @@ pub(crate) async fn handle_steam_id(context: Context, msg: Message) {
         return;
     }
     steam_id_cache.insert(*msg.author.id.as_u64(), String::from(&steam_id_str));
-    write_to_file(String::from("steam-ids.json"), serde_json::to_string(steam_id_cache).unwrap()).await;
+    write_to_file(String::from("../data/steam-ids.json"), serde_json::to_string(steam_id_cache).unwrap()).await;
     let steamid_64 = convert_steamid_to_64(&steam_id_str);
     let response = MessageBuilder::new()
         .push("Updated steamid for ")
@@ -786,7 +786,7 @@ pub(crate) async fn handle_add_map(context: Context, msg: Message) {
         return;
     }
     maps.push(String::from(&map_name));
-    write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
+    write_to_file(String::from("../data/maps.json"), serde_json::to_string(maps).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" added map: `")
@@ -815,7 +815,7 @@ pub(crate) async fn handle_remove_map(context: Context, msg: Message) {
     }
     let index = maps.iter().position(|m| m == &map_name).unwrap();
     maps.remove(index);
-    write_to_file(String::from("maps.json"), serde_json::to_string(maps).unwrap()).await;
+    write_to_file(String::from("../data/maps.json"), serde_json::to_string(maps).unwrap()).await;
     let response = MessageBuilder::new()
         .mention(&msg.author)
         .push(" removed map: `")
@@ -1287,6 +1287,6 @@ pub(crate) async fn handle_teamname(context: Context, msg: Message) {
         return;
     }
     teamname_cache.insert(*msg.author.id.as_u64(), String::from(&teamname));
-    write_to_file(String::from("teamnames.json"), serde_json::to_string(teamname_cache).unwrap()).await;
+    write_to_file(String::from("../data/teamnames.json"), serde_json::to_string(teamname_cache).unwrap()).await;
     send_simple_tagged_msg(&context, &msg, &format!(" custom team name successfully set to `{}`", &teamname), &msg.author).await;
 }
