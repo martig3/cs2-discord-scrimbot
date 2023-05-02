@@ -1669,6 +1669,7 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
                         .query(&[
                             ("steamid", &steam_id),
                             ("option", &"top10".to_string()),
+                            ("mapCountLimit", &"3".to_string()),
                             ("length", &month_arg.get(0..1).unwrap().to_string()),
                             (&"map", &map_name),
                         ])
@@ -1725,7 +1726,11 @@ pub(crate) async fn handle_stats(context: Context, msg: Message) {
             } else {
                 let resp = client
                     .get(&format!("{}/api/stats", scrimbot_api_url))
-                    .query(&[("option", &"top10".to_string()), (&"map", &map_name)])
+                    .query(&[
+                        ("option", &"top10".to_string()),
+                        ("mapCountLimit", &"3".to_string()),
+                        (&"map", &map_name),
+                    ])
                     .send()
                     .await
                     .unwrap();
