@@ -4,3 +4,4 @@ rust-dathost-scrimbot.iml
 *.yaml
 *.json
 Cargo.lock
+.env
