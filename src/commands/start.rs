@@ -17,7 +17,7 @@ use serenity::{
 };
 
 use crate::{
-    utils::{list_teams, user_in_queue, Stats},
+    utils::{get_api_client, list_teams, user_in_queue, Stats},
     Context, ScrimbotApiConfig, State,
 };
 
@@ -770,22 +770,6 @@ async fn handle_autodraft(
     init_sidepick_state(context, mci, Some(teams_str)).await?;
 
     Ok(())
-}
-
-fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
-    let mut headers = header::HeaderMap::new();
-    let mut auth_str = config.scrimbot_api_user.as_ref().unwrap().clone();
-    auth_str.push(':');
-    auth_str.push_str(&config.scrimbot_api_password.as_ref().unwrap().clone());
-    let base64 = base64::encode(auth_str);
-    let mut auth_str = String::from("Basic ");
-    auth_str.push_str(&base64);
-    headers.insert("Authorization", auth_str.parse().unwrap());
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap();
-    client
 }
 
 async fn start_server(context: &Context<'_>) -> Result<()> {
