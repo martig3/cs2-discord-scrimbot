@@ -21,7 +21,6 @@ pub(crate) async fn handle_stats(
             .await?;
         return Ok(());
     };
-    // if let Some(scrimbot_api_url) = &config.scrimbot_api_config.scrimbot_api_url {
     let client = get_api_client(api_config);
     let steam_ids = context.data().steam_id_cache.lock().await.clone();
     let Some(steam_id) = steam_ids.get(context.author().id.as_u64()) else {
