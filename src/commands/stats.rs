@@ -1,18 +1,32 @@
 use poise::command;
-use reqwest::header;
 
 use crate::{
     utils::{format_stats, get_api_client, Stats},
     Context,
 };
 use anyhow::Result;
-
+#[derive(poise::ChoiceParameter)]
+pub enum QueryTypeChoice {
+    #[name = "Top 10"]
+    Top10,
+    #[name = "Maps"]
+    Maps,
+}
+impl QueryTypeChoice {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Top10 => "top10",
+            Self::Maps => "maps",
+        }
+    }
+}
+// Query stats
 #[command(slash_command, guild_only, ephemeral)]
-pub(crate) async fn handle_stats(
+pub(crate) async fn stats(
     context: Context<'_>,
-    #[description = "Query type"] type_option: Option<String>,
+    #[description = "Query type"] type_option: Option<QueryTypeChoice>,
     #[description = "How many months to go back"] months: Option<i32>,
-    #[description = "Map"] map: Option<String>,
+    #[description = "Map name"] map: Option<String>,
 ) -> Result<()> {
     let config = &context.data().config;
     let Some(api_config)  = &config.scrimbot_api_config else {
@@ -34,12 +48,16 @@ pub(crate) async fn handle_stats(
     let mut options = Vec::new();
     let mut print_map = false;
     if let Some(type_option) = type_option {
-        if type_option == "top10" {
-            options.push(("steamid", steam_id));
-        } else {
-            options.push(("option", type_option));
-            print_map = true
+        match &type_option.as_str() {
+            &"maps" => {
+                options.push(("steamid", steam_id));
+                print_map = true;
+            }
+            _ => (),
         }
+        options.push(("option", type_option.as_str().to_string()));
+    } else {
+        options.push(("steamid", steam_id));
     };
     if let Some(month_option) = months {
         options.push(("months", month_option.to_string()));
@@ -47,10 +65,9 @@ pub(crate) async fn handle_stats(
     if let Some(map_option) = map {
         options.push(("map", map_option.to_string()));
     };
-
     let resp = client
         .get(&format!(
-            "{}/api/stats",
+            "{}/stats",
             api_config.scrimbot_api_url.as_ref().unwrap()
         ))
         .query(options.as_slice())
@@ -58,6 +75,7 @@ pub(crate) async fn handle_stats(
         .await
         .unwrap();
     if resp.status() != 200 {
+        eprintln!("{}", resp.error_for_status().unwrap().text().await?);
         context
             .say("Something went wrong retrieving stats, please try again later")
             .await?;

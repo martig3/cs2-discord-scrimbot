@@ -5,6 +5,7 @@ use anyhow::Result;
 use commands::admin;
 use commands::queue;
 use commands::start::start;
+use commands::stats::stats;
 use commands::steamid::steam_id;
 use commands::teamname::teamname;
 use dotenvy::dotenv;
@@ -137,7 +138,7 @@ async fn main() -> Result<()> {
 
     let framework = Framework::<_, Error>::builder()
         .options(FrameworkOptions {
-            commands: vec![queue(), admin(), steam_id(), teamname(), start()],
+            commands: vec![queue(), admin(), steam_id(), teamname(), start(), stats()],
             event_handler: move |context, event, framework, _data| {
                 Box::pin(async move {
                     if let Event::Ready { data_about_bot } = event {

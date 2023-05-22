@@ -1,15 +1,13 @@
-use std::{any, borrow::Borrow, collections::HashMap, sync::Arc, thread, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use base64::encode;
-use futures::lock::Mutex;
 use poise::{
     command,
-    serenity_prelude::{ButtonStyle, Guild, InteractionResponseType, Message, ReactionType, User},
-    ReplyHandle,
+    serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
 };
 use rand::Rng;
-use reqwest::{header, Client, Request};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::{
     builder::{CreateActionRow, CreateButton, CreateSelectMenu, CreateSelectMenuOption},
@@ -20,7 +18,7 @@ use serenity::{
 
 use crate::{
     utils::{get_api_client, list_teams, user_in_queue, Stats},
-    Context, ScrimbotApiConfig, State,
+    Context, State,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -38,6 +36,7 @@ pub struct Ports {
     pub gotv: i64,
 }
 
+// Start scrim setup
 #[command(slash_command, guild_only)]
 pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     let in_queue = user_in_queue(&context, None).await?;
@@ -47,6 +46,12 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
 
     {
         let mut state = context.data().state.lock().await;
+        if *state != State::Queue {
+            context
+                .send(|m| m.ephemeral(true).content("Setup has already started"))
+                .await?;
+            return Ok(());
+        }
         *state = State::Ready;
     }
     let content = list_ready(&context).await?;
@@ -389,7 +394,6 @@ async fn handle_draft_type(
         let mut state = context.data().state.lock().await;
         match option.as_str() {
             "autodraft" => {
-                *state = State::Draft;
                 handle_autodraft(context, mci).await?;
             }
             "manualdraft" => {
@@ -441,30 +445,15 @@ pub async fn handle_map_pick(
     let queue_len = context.data().user_queue.lock().await.clone().len();
 
     mci.create_interaction_response(context, |r| {
-        r.kind(InteractionResponseType::UpdateMessage)
-            .interaction_response_data(|d| {
-                d.content(format!(
-                    "Map vote phase: {}/{} have voted",
-                    map_votes.len(),
-                    queue_len
-                ))
-            })
+        r.kind(InteractionResponseType::DeferredUpdateMessage)
+            .interaction_response_data(|d| d)
     })
     .await?;
 
     if queue_len == map_votes.len() {
         return Ok(true);
     }
-    // mci.message
-    //     .clone()
-    //     .edit(context, |m| {
-    //         m.content(format!(
-    //             "Map vote phase: {}/{} have voted",
-    //             map_votes.len(),
-    //             queue_len
-    //         ))
-    //     })
-    //     .await?;
+
     Ok(false)
 }
 
@@ -646,11 +635,11 @@ async fn handle_autodraft(
     mci: &Arc<MessageComponentInteraction>,
 ) -> Result<()> {
     let user_queue = context.data().user_queue.lock().await.clone();
-    let steam_id_cache = context.data().steam_id_cache.lock().await.clone();
+    let steam_ids = context.data().steam_id_cache.lock().await.clone();
     let mut user_queue_steamids: HashMap<u64, String> = HashMap::new();
     let mut user_queue_user_ids: HashMap<String, u64> = HashMap::new();
     for user in user_queue.iter() {
-        let mut steamid = steam_id_cache.get(user.id.as_u64()).unwrap().to_string();
+        let mut steamid = steam_ids.get(user.id.as_u64()).unwrap().to_string();
         steamid = steamid.replacen("STEAM_0", "STEAM_1", 1);
         user_queue_steamids.insert(*user.id.as_u64(), steamid.clone());
         user_queue_user_ids.insert(steamid.clone(), *user.id.as_u64());
@@ -682,7 +671,7 @@ async fn handle_autodraft(
 
     let resp = client
         .get(&format!(
-            "{}/api/stats",
+            "{}/stats",
             &config
                 .scrimbot_api_config
                 .unwrap()
@@ -704,22 +693,28 @@ async fn handle_autodraft(
     let content = resp.text().await.unwrap();
     let stats: Vec<Stats> = serde_json::from_str(&content).unwrap();
     if stats.is_empty() {
-        context
-            .send(|m| {
-                m.ephemeral(true)
-                    .content("No statistics found for any players, please use another option")
-            })
-            .await?;
+        mci.create_interaction_response(&context, |r| {
+            r.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| {
+                    d.ephemeral(true)
+                        .content("No statistics found for any players, please use another option")
+                })
+        })
+        .await?;
         return Ok(());
     }
     if stats.len() < 2 {
-        context
-            .send(|m| {
-                m.ephemeral(true).content(
-                    "Unable to find stats for at least 2 players. Please use another option",
+        mci.create_interaction_response(&context, |r| {
+            r.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(
+                    |d: &mut serenity::builder::CreateInteractionResponseData| {
+                        d.ephemeral(true).content(
+                        "Unable to find stats for at least 2 players. Please use another option",
+                    )
+                    },
                 )
-            })
-            .await?;
+        })
+        .await?;
         return Ok(());
     }
     let captain_a_user = user_queue
@@ -781,7 +776,7 @@ async fn handle_autodraft(
         draft.clone()
     };
     let team_names = context.data().team_names.lock().await.clone();
-    if draft.team_a.len() + draft.team_b.len() == user_queue.len() {
+    if draft.team_a.len() + draft.team_b.len() != user_queue.len() {
         {
             let mut state = context.data().state.lock().await;
             *state = State::Draft;
