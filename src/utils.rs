@@ -224,3 +224,15 @@ pub fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
         .unwrap();
     client
 }
+pub async fn reset_draft(context: &Context<'_>) -> Result<()> {
+    let mut draft = context.data().draft.lock().await;
+    draft.captain_a = None;
+    draft.captain_b = None;
+    draft.current_picker = None;
+    draft.team_a = Vec::new();
+    draft.team_b = Vec::new();
+    draft.team_b_start_side = String::from("");
+    draft.map_votes = HashMap::new();
+    draft.selected_map = String::new();
+    Ok(())
+}

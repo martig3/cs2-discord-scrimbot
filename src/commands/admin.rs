@@ -1,4 +1,7 @@
-use crate::{utils::write_to_file, Context, State};
+use crate::{
+    utils::{reset_draft, write_to_file},
+    Context, State,
+};
 use anyhow::Result;
 use poise::{command, serenity_prelude::User};
 use serenity::utils::MessageBuilder;
@@ -7,12 +10,26 @@ use serenity::utils::MessageBuilder;
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("map", "queue")
+    subcommands("map", "queue", "setup")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
 }
+#[command(slash_command, guild_only, ephemeral, subcommands("cancel"))]
+pub(crate) async fn setup(_context: Context<'_>) -> Result<()> {
+    Ok(())
+}
 
+#[command(
+    slash_command,
+    guild_only,
+    description_localized("en-US", "Cancel the setup process")
+)]
+pub(crate) async fn cancel(context: Context<'_>) -> Result<()> {
+    reset_draft(&context).await?;
+    context.say("Setup canceled").await?;
+    Ok(())
+}
 #[command(
     slash_command,
     guild_only,
@@ -36,7 +53,13 @@ pub(crate) async fn clear(context: Context<'_>) -> Result<()> {
 pub(crate) async fn map(_context: Context<'_>) -> Result<()> {
     Ok(())
 }
-#[command(slash_command, guild_only, ephemeral, rename = "add")]
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    rename = "add",
+    description_localized("en-US", "Add map to the map pool")
+)]
 pub(crate) async fn add_map(
     context: Context<'_>,
     #[description = "Map name"] map_name: String,
@@ -68,7 +91,13 @@ pub(crate) async fn add_map(
     context.say(response).await?;
     Ok(())
 }
-#[command(slash_command, guild_only, ephemeral, rename = "remove")]
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    rename = "remove",
+    description_localized("en-US", "Remove map from the map pool")
+)]
 pub(crate) async fn remove_map(
     context: Context<'_>,
     #[description = "Map name"] map_name: String,
@@ -105,7 +134,11 @@ pub(crate) async fn queue(_context: Context<'_>) -> Result<()> {
     Ok(())
 }
 
-#[command(slash_command, guild_only)]
+#[command(
+    slash_command,
+    guild_only,
+    description_localized("en-US", "Kick user from queue")
+)]
 pub(crate) async fn kick(context: Context<'_>, user: User) -> Result<()> {
     let state = context.data().state.lock().await.clone();
     if state != State::Queue {

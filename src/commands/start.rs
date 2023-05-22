@@ -17,7 +17,7 @@ use serenity::{
 };
 
 use crate::{
-    utils::{get_api_client, list_teams, user_in_queue, Stats},
+    utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
     Context, State,
 };
 
@@ -36,8 +36,11 @@ pub struct Ports {
     pub gotv: i64,
 }
 
-// Start scrim setup
-#[command(slash_command, guild_only)]
+#[command(
+    slash_command,
+    guild_only,
+    description_localized("en-US", "Start scrim setup")
+)]
 pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     let in_queue = user_in_queue(&context, None).await?;
     if !in_queue {
@@ -163,19 +166,6 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
 
     start_server(&context).await?;
 
-    Ok(())
-}
-
-async fn reset_draft(context: &Context<'_>) -> Result<()> {
-    let mut draft = context.data().draft.lock().await;
-    draft.captain_a = None;
-    draft.captain_b = None;
-    draft.current_picker = None;
-    draft.team_a = Vec::new();
-    draft.team_b = Vec::new();
-    draft.team_b_start_side = String::from("");
-    draft.map_votes = HashMap::new();
-    draft.selected_map = String::new();
     Ok(())
 }
 

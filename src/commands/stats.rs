@@ -20,8 +20,13 @@ impl QueryTypeChoice {
         }
     }
 }
-// Query stats
-#[command(slash_command, guild_only, ephemeral)]
+
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    description_localized("en-US", "Query stats")
+)]
 pub(crate) async fn stats(
     context: Context<'_>,
     #[description = "Query type"] type_option: Option<QueryTypeChoice>,

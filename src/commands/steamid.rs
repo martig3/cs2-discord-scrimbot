@@ -8,7 +8,12 @@ use crate::{
     Context,
 };
 
-#[command(slash_command, guild_only)]
+#[command(
+    slash_command,
+    guild_only,
+    rename = "steamid",
+    description_localized("en-US", "Set your SteamID")
+)]
 pub(crate) async fn steam_id(
     context: Context<'_>,
     #[description = "Your SteamID i.e. STEAM_0:1:12345678"] steam_id: String,
