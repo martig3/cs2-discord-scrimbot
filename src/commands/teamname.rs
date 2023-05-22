@@ -3,7 +3,12 @@ use poise::command;
 
 use crate::{utils::write_to_file, Context};
 
-#[command(slash_command, guild_only, ephemeral)]
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    description_localized("en-US", "Set your custom team name")
+)]
 pub(crate) async fn teamname(
     context: Context<'_>,
     #[description = "Team name"] team_name: String,
