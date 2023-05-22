@@ -1,13 +1,13 @@
-use crate::{utils::write_to_file, Context};
+use crate::{utils::write_to_file, Context, State};
 use anyhow::Result;
-use poise::command;
+use poise::{command, serenity_prelude::User};
 use serenity::utils::MessageBuilder;
 #[command(
     slash_command,
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("clear", "map")
+    subcommands("map")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
@@ -92,5 +92,53 @@ pub(crate) async fn remove_map(
     )
     .await;
     context.say(format!("Removed map: `{}`", map_name)).await?;
+    Ok(())
+}
+
+#[command(
+    slash_command,
+    guild_only,
+    default_member_permissions = "MODERATE_MEMBERS",
+    subcommands("kick", "clear")
+)]
+pub(crate) async fn queue(_context: Context<'_>) -> Result<()> {
+    Ok(())
+}
+
+#[command(slash_command, guild_only)]
+pub(crate) async fn kick(context: Context<'_>, user: User) -> Result<()> {
+    let state = context.data().state.lock().await.clone();
+    if state != State::Queue {
+        context
+            .send(|m| {
+                m.ephemeral(true).content(
+                    "Cannot `/kick` a user after `/start`, use `/cancel` to start over if needed.",
+                )
+            })
+            .await?;
+        return Ok(());
+    }
+    let user_queue = {
+        let mut user_queue = context.data().user_queue.lock().await.clone();
+        if !user_queue.contains(&user) {
+            let response = MessageBuilder::new()
+                .mention(context.author())
+                .push(" is not in the queue.")
+                .build();
+            context.send(|m| m.content(response)).await?;
+            return Ok(());
+        }
+        let index = user_queue.iter().position(|r| r.id == user.id).unwrap();
+        user_queue.remove(index);
+        user_queue.clone()
+    };
+    let response = MessageBuilder::new()
+        .mention(&user)
+        .push(" has been kicked. Queue size: ")
+        .push(user_queue.len().to_string())
+        .push("/10")
+        .build();
+    context.say(response).await?;
+
     Ok(())
 }

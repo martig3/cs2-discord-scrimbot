@@ -757,46 +757,6 @@ pub(crate) async fn handle_map_list(context: Context, msg: Message) {
     }
 }
 
-pub(crate) async fn handle_kick(context: Context, msg: Message) {
-    if !admin_check(&context, &msg, true).await {
-        return;
-    }
-    let mut data = context.data.write().await;
-    let state: &mut StateContainer = data.get_mut::<BotState>().unwrap();
-    if state.state != State::Queue {
-        send_simple_tagged_msg(
-            &context,
-            &msg,
-            " cannot `.kick` the queue after `.start`, use `.cancel` to start over if needed.",
-            &msg.author,
-        )
-        .await;
-        return;
-    }
-    let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-    let user = &msg.mentions[0];
-    if !user_queue.contains(&user) {
-        let response = MessageBuilder::new()
-            .mention(&msg.author)
-            .push(" is not in the queue.")
-            .build();
-        if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-            eprintln!("Error sending message: {:?}", why);
-        }
-        return;
-    }
-    let index = user_queue.iter().position(|r| r.id == user.id).unwrap();
-    user_queue.remove(index);
-    let response = MessageBuilder::new()
-        .mention(user)
-        .push(" has been kicked. Queue size: ")
-        .push(user_queue.len().to_string())
-        .push("/10")
-        .build();
-    if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-        eprintln!("Error sending message: {:?}", why);
-    }
-}
 pub(crate) async fn handle_ready(context: Context, msg: Message) {
     let mut data = context.data.write().await;
     let bot_state: &StateContainer = data.get_mut::<BotState>().unwrap();
