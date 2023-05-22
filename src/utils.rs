@@ -9,12 +9,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use poise::serenity_prelude::{
-    GuildContainer, InteractionResponseType, Message, MessageComponentInteraction, User,
+    Guild, GuildContainer, InteractionResponseType, Message, MessageComponentInteraction, User,
 };
+use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serenity::{http::CacheHttp, utils::MessageBuilder};
 
-use crate::{Context, Draft};
+use crate::{Context, Draft, ScrimbotApiConfig};
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
@@ -33,116 +34,116 @@ pub struct Stats {
     pub winPercentage: f64,
 }
 
-// pub(crate) async fn format_stats(
-//     stats: &Vec<Stats>,
-//     context: &Context,
-//     steam_id_cache: &HashMap<u64, String>,
-//     &guild_id: &u64,
-//     print_map: bool,
-// ) -> String {
-//     let mut top_ten_str: String = String::from("");
-//     top_ten_str.push_str("```md\n");
-//     if stats.len() == 1 {
-//         let mut map = String::from(stats[0].map.clone());
-//         if map != "" {
-//             map = map.replace("de_", "");
-//             if map.len() > 12 {
-//                 map = map[0..9].to_string();
-//                 map.push_str("...");
-//             }
-//             top_ten_str.push_str(&*format!(
-//                 "Map: {:<12} K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
-//                 map
-//             ));
-//         } else {
-//             top_ten_str.push_str(
-//                 "                  K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
-//             );
-//         }
-//     } else if !print_map {
-//         top_ten_str.push_str(
-//             "     Player       K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
-//         );
-//     } else {
-//         top_ten_str.push_str(
-//             "     Maps         K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
-//         );
-//     }
-//     top_ten_str.push_str(
-//         "-----------------------------------------------------------------------------\n",
-//     );
-//     let guild = Guild::get(&context.http, guild_id).await.unwrap();
-//     let mut count = 0;
-//     for stat in stats {
-//         count += 1;
-//         let user_id: Option<u64> = steam_id_cache.iter().find_map(|(key, val)| {
-//             if format!("STEAM_1{}", &val[7..]) == stat.steamId {
-//                 Some(*key)
-//             } else {
-//                 None
-//             }
-//         });
-//         let user_cached: Option<User> = context.cache.user(user_id.unwrap_or(0)).await;
-//         let user: Option<User>;
-//         if let Some(u) = user_cached {
-//             user = Some(u)
-//         } else {
-//             let member = guild.member(&context.http, user_id.unwrap_or(0)).await;
-//             if let Ok(m) = member {
-//                 user = Some(m.user)
-//             } else {
-//                 user = None
-//             };
-//         }
-//         if let Some(u) = user {
-//             if !print_map {
-//                 let mut user_name = u.name.clone();
-//                 if user_name.len() > 12 {
-//                     user_name = user_name[0..9].to_string();
-//                     user_name.push_str("...");
-//                 }
-//                 top_ten_str.push_str(&format!(
-//                     "{:>3} @{} {:3.2}  {: >6}   {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n",
-//                     format!("{}.", count.to_string()),
-//                     format!("{: <12}", user_name.to_owned()),
-//                     stat.kdRatio,
-//                     format!("{:.2}", &stat.adr),
-//                     format!("{:.2}", &stat.rws),
-//                     stat.rating,
-//                     stat.hs,
-//                     stat.winPercentage,
-//                     stat.playCount
-//                 ));
-//             } else {
-//                 let mut map = stat.map.clone();
-//                 map = map.replace("de_", "");
-//                 if map.len() > 12 {
-//                     map = map[0..9].to_string();
-//                     map.push_str("...");
-//                 }
-//                 top_ten_str.push_str(&format!(
-//                     "{:>3}  {} {:3.2}   {: >6}  {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n",
-//                     format!("{}.", count.to_string()),
-//                     format!("{: <12}", map.to_owned()),
-//                     stat.kdRatio,
-//                     format!("{:.2}", &stat.adr),
-//                     format!("{:.2}", &stat.rws),
-//                     stat.rating,
-//                     stat.hs,
-//                     stat.winPercentage,
-//                     stat.playCount
-//                 ))
-//             }
-//         } else {
-//             top_ten_str.push_str(&format!(
-//                 "{:>3} @Error!\n",
-//                 format!("{}.", count.to_string())
-//             ))
-//         };
-//     }
-//     top_ten_str.push_str("```");
-//     top_ten_str
-// }
+pub(crate) async fn format_stats(
+    stats: &Vec<Stats>,
+    context: &Context<'_>,
+    steam_id_cache: &HashMap<u64, String>,
+    &guild_id: &u64,
+    print_map: bool,
+) -> Result<String> {
+    let mut top_ten_str: String = String::from("");
+    top_ten_str.push_str("```md\n");
+    if stats.len() == 1 {
+        let mut map = String::from(stats[0].map.clone());
+        if map != "" {
+            map = map.replace("de_", "");
+            if map.len() > 12 {
+                map = map[0..9].to_string();
+                map.push_str("...");
+            }
+            top_ten_str.push_str(&*format!(
+                "Map: {:<12} K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
+                map
+            ));
+        } else {
+            top_ten_str.push_str(
+                "                  K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
+            );
+        }
+    } else if !print_map {
+        top_ten_str.push_str(
+            "     Player       K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
+        );
+    } else {
+        top_ten_str.push_str(
+            "     Maps         K/D    ADR      RWS     Rating   HS%      Win% (# Games)\n",
+        );
+    }
+    top_ten_str.push_str(
+        "-----------------------------------------------------------------------------\n",
+    );
+    let guild = Guild::get(&context.http(), guild_id).await?;
+    let mut count = 0;
+    for stat in stats {
+        count += 1;
+        let user_id: Option<u64> = steam_id_cache.iter().find_map(|(key, val)| {
+            if format!("STEAM_1{}", &val[7..]) == stat.steamId {
+                Some(*key)
+            } else {
+                None
+            }
+        });
+        let user_cached: Option<User> = context.cache().unwrap().user(user_id.unwrap_or(0));
+        let user: Option<User>;
+        if let Some(u) = user_cached {
+            user = Some(u)
+        } else {
+            let member = guild.member(&context.http(), user_id.unwrap_or(0)).await;
+            if let Ok(m) = member {
+                user = Some(m.user)
+            } else {
+                user = None
+            };
+        }
+        if let Some(u) = user {
+            if !print_map {
+                let mut user_name = u.name.clone();
+                if user_name.len() > 12 {
+                    user_name = user_name[0..9].to_string();
+                    user_name.push_str("...");
+                }
+                top_ten_str.push_str(&format!(
+                    "{:>3} @{} {:3.2}  {: >6}   {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n",
+                    format!("{}.", count.to_string()),
+                    format!("{: <12}", user_name.to_owned()),
+                    stat.kdRatio,
+                    format!("{:.2}", &stat.adr),
+                    format!("{:.2}", &stat.rws),
+                    stat.rating,
+                    stat.hs,
+                    stat.winPercentage,
+                    stat.playCount
+                ));
+            } else {
+                let mut map = stat.map.clone();
+                map = map.replace("de_", "");
+                if map.len() > 12 {
+                    map = map[0..9].to_string();
+                    map.push_str("...");
+                }
+                top_ten_str.push_str(&format!(
+                    "{:>3}  {} {:3.2}   {: >6}  {: >6}   {:3.2}     {:3.1}%    {:3.2}% ({})\n",
+                    format!("{}.", count.to_string()),
+                    format!("{: <12}", map.to_owned()),
+                    stat.kdRatio,
+                    format!("{:.2}", &stat.adr),
+                    format!("{:.2}", &stat.rws),
+                    stat.rating,
+                    stat.hs,
+                    stat.winPercentage,
+                    stat.playCount
+                ))
+            }
+        } else {
+            top_ten_str.push_str(&format!(
+                "{:>3} @Error!\n",
+                format!("{}.", count.to_string())
+            ))
+        };
+    }
+    top_ten_str.push_str("```");
+    Ok(top_ten_str)
+}
 
 // pub(crate) async fn get_maps(context: &Context) -> Vec<String> {
 //     let data = context.data.write().await;
@@ -248,4 +249,20 @@ pub(crate) async fn user_in_queue(
         return Ok(false);
     }
     return Ok(true);
+}
+
+pub fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
+    let mut headers = header::HeaderMap::new();
+    let mut auth_str = config.scrimbot_api_user.as_ref().unwrap().clone();
+    auth_str.push(':');
+    auth_str.push_str(&config.scrimbot_api_password.as_ref().unwrap().clone());
+    let base64 = base64::encode(auth_str);
+    let mut auth_str = String::from("Basic ");
+    auth_str.push_str(&base64);
+    headers.insert("Authorization", auth_str.parse().unwrap());
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap();
+    client
 }
