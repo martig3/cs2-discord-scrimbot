@@ -7,7 +7,7 @@ use serenity::utils::MessageBuilder;
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("map")
+    subcommands("map", "queue")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
@@ -119,7 +119,7 @@ pub(crate) async fn kick(context: Context<'_>, user: User) -> Result<()> {
         return Ok(());
     }
     let user_queue = {
-        let mut user_queue = context.data().user_queue.lock().await.clone();
+        let mut user_queue = context.data().user_queue.lock().await;
         if !user_queue.contains(&user) {
             let response = MessageBuilder::new()
                 .mention(context.author())

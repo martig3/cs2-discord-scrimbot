@@ -1,7 +1,7 @@
 use crate::{utils::write_to_file, Context, State};
 use anyhow::Result;
 use poise::{command, serenity_prelude::Guild};
-use serenity::{http::CacheHttp, utils::MessageBuilder};
+use serenity::utils::MessageBuilder;
 
 #[command(
     slash_command,
