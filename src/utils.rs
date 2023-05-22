@@ -219,43 +219,6 @@ pub(crate) fn list_teams(draft: &Draft, team_names: &HashMap<u64, String>) -> St
     response
 }
 
-pub(crate) fn list_unpicked(
-    draft: &Draft,
-    teamnames: &HashMap<u64, String>,
-    user_queue: &Vec<User>,
-) -> String {
-    let team_a_name = teamnames
-        .get(draft.captain_a.as_ref().unwrap().id.as_u64())
-        .unwrap_or(&draft.captain_a.as_ref().unwrap().name);
-    let team_b_name = teamnames
-        .get(draft.captain_b.as_ref().unwrap().id.as_u64())
-        .unwrap_or(&draft.captain_b.as_ref().unwrap().name);
-    let remaining_users: String = user_queue
-        .iter()
-        .filter(|user| !draft.team_a.contains(user) && !draft.team_b.contains(user))
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_a: String = draft
-        .team_a
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let team_b: String = draft
-        .team_b
-        .iter()
-        .map(|user| format!("- @{}\n", &user.name))
-        .collect();
-    let response = MessageBuilder::new()
-        .push_bold_line(format!("Team {}:", team_a_name))
-        .push_line(team_a)
-        .push_bold_line(format!("Team {}:", team_b_name))
-        .push_line(team_b)
-        .push_bold_line("Remaining players: ")
-        .push_line(remaining_users)
-        .build();
-    response
-}
-
 pub(crate) async fn write_to_file(path: String, content: String) {
     let mut error_string = String::from("Error writing to ");
     error_string.push_str(&path);

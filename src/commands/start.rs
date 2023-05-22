@@ -1,14 +1,16 @@
-use std::{any, collections::HashMap, sync::Arc, thread, time::Duration};
+use std::{any, borrow::Borrow, collections::HashMap, sync::Arc, thread, time::Duration};
 
 use anyhow::{anyhow, Result};
+use base64::encode;
 use futures::lock::Mutex;
 use poise::{
     command,
-    serenity_prelude::{ButtonStyle, Guild, InteractionResponseType, Message, User},
+    serenity_prelude::{ButtonStyle, Guild, InteractionResponseType, Message, ReactionType, User},
     ReplyHandle,
 };
 use rand::Rng;
-use reqwest::{header, Request};
+use reqwest::{header, Client, Request};
+use serde::{Deserialize, Serialize};
 use serenity::{
     builder::{CreateActionRow, CreateButton, CreateSelectMenu, CreateSelectMenuOption},
     futures::StreamExt,
@@ -20,6 +22,21 @@ use crate::{
     utils::{list_teams, user_in_queue, Stats},
     Context, ScrimbotApiConfig, State,
 };
+
+#[derive(Serialize, Deserialize)]
+pub struct ServerInfoResponse {
+    pub game: Option<String>,
+    pub id: String,
+    pub ip: String,
+    pub ports: Ports,
+    pub location: Option<String>,
+    pub custom_domain: Option<String>,
+}
+#[derive(Serialize, Deserialize)]
+pub struct Ports {
+    pub game: i64,
+    pub gotv: i64,
+}
 
 #[command(slash_command, guild_only)]
 pub(crate) async fn start(context: Context<'_>) -> Result<()> {
@@ -80,12 +97,17 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
         .message()
         .await?
         .await_component_interactions(&context)
-        .timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(60))
         .build();
     loop {
         let opt = cib.next().await;
         match opt {
-            Some(mci) => handle_map_pick(&context, &mci).await?,
+            Some(mci) => {
+                let completed = handle_map_pick(&context, &mci).await?;
+                if completed {
+                    break;
+                }
+            }
             None => {
                 break;
             }
@@ -232,8 +254,10 @@ async fn handle_draft(context: &Context<'_>, mci: &MessageComponentInteraction) 
             })
         })
         .await?;
+        return Ok(());
     }
-    let user_id = &mci.data.custom_id;
+    let user_id = mci.data.values.get(0).unwrap();
+    println!("user_id: {}", user_id);
     let user_id = user_id.parse::<u64>()?;
     let queue = context.data().user_queue.lock().await.clone();
     let user = queue.iter().find(|u| u.id.0 == user_id).unwrap().clone();
@@ -401,31 +425,47 @@ fn create_captain_action_row() -> CreateActionRow {
 pub async fn handle_map_pick(
     context: &Context<'_>,
     mci: &Arc<MessageComponentInteraction>,
-) -> Result<()> {
+) -> Result<bool> {
     let in_queue = user_in_queue(context, Some(mci)).await?;
     if !in_queue {
-        return Ok(());
+        return Ok(false);
     }
     let maps_selected = &mci.data.values;
     let map_votes = {
         let mut draft = context.data().draft.lock().await;
         draft
             .map_votes
-            .insert(context.author().clone(), maps_selected.clone());
+            .insert(mci.user.clone(), maps_selected.clone());
         draft.map_votes.clone()
     };
-    mci.message
-        .clone()
-        .edit(context, |m| {
-            m.content(format!("Map vote phase: {}/10 have voted", map_votes.len()))
-        })
-        .await?;
+    let queue_len = context.data().user_queue.lock().await.clone().len();
+
     mci.create_interaction_response(context, |r| {
-        r.kind(InteractionResponseType::ChannelMessageWithSource)
-            .interaction_response_data(|d| d.ephemeral(true).content("Submitted map vote"))
+        r.kind(InteractionResponseType::UpdateMessage)
+            .interaction_response_data(|d| {
+                d.content(format!(
+                    "Map vote phase: {}/{} have voted",
+                    map_votes.len(),
+                    queue_len
+                ))
+            })
     })
     .await?;
-    Ok(())
+
+    if queue_len == map_votes.len() {
+        return Ok(true);
+    }
+    // mci.message
+    //     .clone()
+    //     .edit(context, |m| {
+    //         m.content(format!(
+    //             "Map vote phase: {}/{} have voted",
+    //             map_votes.len(),
+    //             queue_len
+    //         ))
+    //     })
+    //     .await?;
+    Ok(false)
 }
 
 pub fn create_map_action_row(map_list: Vec<String>) -> CreateActionRow {
@@ -546,16 +586,16 @@ async fn handle_captain_pick(
             return Ok(());
         }
     }
-    mci.create_interaction_response(context, |m| {
-        m.interaction_response_data(|d| d.ephemeral(true).content("You are set as a captain"))
-    })
-    .await?;
     let draft = {
         let mut draft = context.data().draft.lock().await;
         match draft.captain_a {
-            Some(_) => draft.captain_b = Some(mci.user.clone()),
+            Some(_) => {
+                draft.captain_b = Some(mci.user.clone());
+                draft.team_b.push(mci.user.clone());
+            }
             None => {
                 draft.captain_a = Some(mci.user.clone());
+                draft.team_a.push(mci.user.clone());
                 draft.current_picker = Some(mci.user.clone())
             }
         }
@@ -834,7 +874,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let server_id = &config.server.id;
+    let server_id = &config.dathost.server_id;
     let match_end_url = if config.dathost.match_end_url == None {
         ""
     } else {
@@ -851,6 +891,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         let base64 = base64::encode(&auth_str);
         let mut auth_str = String::from("Basic ");
         auth_str.push_str(&base64);
+        println!("webhook_authorization_header: '{}'", auth_str);
     }
     let resp = client
         .post(&start_match_url)
@@ -878,24 +919,54 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         })
         .await?;
     }
-    let steam_web_url: String = format!("steam://connect/{}", &config.server.url);
-    let port_start = &config.server.url.find(':').unwrap_or(0_usize) + 1;
-    let gotv_port = String::from(&config.server.url[port_start..config.server.url.len()])
-        .parse::<i64>()
-        .unwrap_or(0)
-        + 1;
-    let gotv_url = format!("{}{}", &config.server.url[0..port_start], gotv_port);
-    msg.edit(context.clone(), |m| {
-        m.content(&format!(
-            "Server has started.\n\n**Connection info:**\nLink: {}\nConsole: \
-            `connect {}`\n\n_GOTV Info:_\nLink: {}\nConsole: `connect {}`",
-            steam_web_url,
-            &config.server.url,
-            &format!("steam://connect/{}", gotv_url),
-            gotv_url
+    let server_info_url = format!(
+        "https://dathost.net/api/0.1/game-servers/{}",
+        config.dathost.server_id
+    );
+    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
+    let server = client
+        .post(&server_info_url)
+        .basic_auth(&dathost_username, dathost_password)
+        .send()
+        .await
+        .unwrap()
+        .json::<ServerInfoResponse>()
+        .await?;
+    let client = Client::new();
+    let game_url = format!("{}:{}", server.ip, server.ports.game);
+    let gotv_url = format!("{}:{}", server.ip, server.ports.gotv);
+    let url_link = format!("steam://connect/{}", &game_url);
+    let gotv_link = format!("steam://connect/{}", &gotv_url);
+    let resp = client
+        .get(format!(
+            "https://tinyurl.com/api-create.php?url={}",
+            encode(&url_link)
         ))
+        .send()
+        .await
+        .unwrap();
+    let t_url = resp.text_with_charset("utf-8").await.unwrap();
+    let resp = client
+        .get(format!(
+            "https://tinyurl.com/api-create.php?url={}",
+            encode(&gotv_link)
+        ))
+        .send()
+        .await
+        .unwrap();
+    let t_gotv_url = resp.text_with_charset("utf-8").await.unwrap();
+    let team_names = context.data().team_names.lock().await.clone();
+    let eos = MessageBuilder::new()
+        .push_line(list_teams(&draft, &team_names))
+        .push_line(format!("Map: `{}`", &draft.selected_map))
+        .build();
+    msg.edit(context.clone(), |m| {
+        m.content(eos).components(|c| {
+            c.add_action_row(create_server_conn_button_row(&t_url, &t_gotv_url, true))
+        })
     })
     .await?;
+
     let draft = context.data().draft.lock().await.clone();
     let guild = context.partial_guild().await.unwrap();
     if let Some(team_a_channel_id) = config.discord.team_a_channel_id {
@@ -921,7 +992,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     let team_names = context.data().team_names.lock().await.clone();
     let send_command_url = format!(
         "https://dathost.net/api/0.1/game-servers/{}/console",
-        &config.server.id
+        &config.dathost.server_id
     );
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
@@ -971,5 +1042,76 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     queue_msgs.clear();
     reset_draft(context).await?;
 
+    let mut cib = msg
+        .clone()
+        .into_message()
+        .await?
+        .await_component_interactions(context)
+        .timeout(Duration::from_secs(60 * 5))
+        .build();
+    loop {
+        let opt = cib.next().await;
+        match opt {
+            Some(mci) => {
+                mci.create_interaction_response(context, |r| {
+                    r.kind(InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|d| {
+                            d.ephemeral(true).content(format!(
+                                "Console: ||`connect {}`||\nGOTV: ||`connect {}`||",
+                                &game_url, &gotv_url
+                            ))
+                        })
+                })
+                .await
+                .unwrap();
+            }
+            None => {
+                // remove console cmds interaction on timeout
+                msg.into_message()
+                    .await?
+                    .edit(context, |m| {
+                        m.components(|c| {
+                            c.add_action_row(create_server_conn_button_row(
+                                &t_url,
+                                &t_gotv_url,
+                                false,
+                            ))
+                        })
+                    })
+                    .await
+                    .unwrap();
+                break;
+            }
+        }
+    }
     Ok(())
+}
+
+pub fn create_server_conn_button_row(
+    url: &String,
+    gotv_url: &String,
+    show_cmds: bool,
+) -> CreateActionRow {
+    let mut ar = CreateActionRow::default();
+    let mut conn_button = CreateButton::default();
+    conn_button.label("Connect");
+    conn_button.style(ButtonStyle::Link);
+    conn_button.emoji(ReactionType::Unicode("▶".parse().unwrap()));
+    conn_button.url(&url);
+    ar.add_button(conn_button);
+    if show_cmds {
+        let mut console_button = CreateButton::default();
+        console_button.custom_id("console");
+        console_button.label("Console Cmds");
+        console_button.style(ButtonStyle::Secondary);
+        console_button.emoji(ReactionType::Unicode("🧾".parse().unwrap()));
+        ar.add_button(console_button);
+    }
+    let mut gotv_button = CreateButton::default();
+    gotv_button.label("GOTV");
+    gotv_button.style(ButtonStyle::Link);
+    gotv_button.emoji(ReactionType::Unicode("📺".parse().unwrap()));
+    gotv_button.url(gotv_url);
+    ar.add_button(gotv_button);
+    ar
 }

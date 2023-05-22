@@ -7,7 +7,7 @@ use commands::queue;
 use commands::start::start;
 use commands::steamid::steam_id;
 use commands::teamname::teamname;
-use dotenvy::{dotenv, var};
+use dotenvy::dotenv;
 use futures::lock::Mutex;
 use poise::{builtins::create_application_commands, Event, Framework, FrameworkOptions};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,6 @@ mod utils;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
-    server: ServerConfig,
     dathost: DathostConfig,
     discord: DiscordConfig,
     post_setup_msg: Option<String>,
@@ -35,16 +34,11 @@ pub struct ScrimbotApiConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    id: String,
-    url: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
 pub struct DathostConfig {
     username: String,
     password: String,
     match_end_url: Option<String>,
+    server_id: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
