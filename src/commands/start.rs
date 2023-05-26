@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
-use base64::encode;
 use poise::{
     command,
     serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
@@ -595,6 +594,12 @@ async fn handle_captain_pick(
         .await?;
         return Ok(());
     }
+
+    let queue = context.data().user_queue.lock().await.clone().len();
+    if draft.team_a.len() + draft.team_b.len() == queue {
+        init_sidepick_state(context, mci, None).await?;
+        return Ok(());
+    }
     {
         let mut state = context.data().state.lock().await;
         *state = State::Draft;
@@ -894,7 +899,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     );
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server = client
-        .post(&server_info_url)
+        .get(&server_info_url)
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
@@ -902,28 +907,29 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .json::<ServerInfoResponse>()
         .await?;
     let client = Client::new();
-    let game_url = format!("{}:{}", server.ip, server.ports.game);
-    let gotv_url = format!("{}:{}", server.ip, server.ports.gotv);
-    let url_link = format!("steam://connect/{}", &game_url);
+    let host_name = if server.custom_domain.is_some() {
+        server.custom_domain.unwrap()
+    } else {
+        server.ip
+    };
+    let game_url = format!("{}:{}", host_name, server.ports.game);
+    let gotv_url = format!("{}:{}", host_name, server.ports.gotv);
+    let game_link = format!("steam://connect/{}", &game_url);
     let gotv_link = format!("steam://connect/{}", &gotv_url);
-    let resp = client
-        .get(format!(
-            "https://tinyurl.com/api-create.php?url={}",
-            encode(&url_link)
-        ))
+    let t_url = client
+        .get("https://tinyurl.com/api-create.php")
+        .query(&[("url", &game_link)])
         .send()
-        .await
-        .unwrap();
-    let t_url = resp.text_with_charset("utf-8").await.unwrap();
-    let resp = client
-        .get(format!(
-            "https://tinyurl.com/api-create.php?url={}",
-            encode(&gotv_link)
-        ))
+        .await?
+        .text()
+        .await?;
+    let t_gotv_url = client
+        .get("https://tinyurl.com/api-create.php")
+        .query(&[("url", &gotv_link)])
         .send()
-        .await
-        .unwrap();
-    let t_gotv_url = resp.text_with_charset("utf-8").await.unwrap();
+        .await?
+        .text()
+        .await?;
     let team_names = context.data().team_names.lock().await.clone();
     let eos = MessageBuilder::new()
         .push_line(list_teams(&draft, &team_names))
@@ -1001,14 +1007,22 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         eprintln!("Error setting team name 2: {:?}", resp);
     }
     // reset to queue state
-    let mut user_queue = context.data().user_queue.lock().await;
-    user_queue.clear();
-    let mut ready_queue = context.data().user_queue.lock().await;
-    ready_queue.clear();
-    let mut state = context.data().state.lock().await;
-    *state = State::Queue;
-    let mut queue_msgs = context.data().queue_messages.lock().await;
-    queue_msgs.clear();
+    {
+        let mut user_queue = context.data().user_queue.lock().await;
+        user_queue.clear();
+    }
+    {
+        let mut ready_queue = context.data().user_queue.lock().await;
+        ready_queue.clear();
+    }
+    {
+        let mut state = context.data().state.lock().await;
+        *state = State::Queue;
+    }
+    {
+        let mut queue_msgs = context.data().queue_messages.lock().await;
+        queue_msgs.clear();
+    }
     reset_draft(context).await?;
 
     let mut cib = msg
@@ -1031,8 +1045,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                             ))
                         })
                 })
-                .await
-                .unwrap();
+                .await?;
             }
             None => {
                 // remove console cmds interaction on timeout
@@ -1047,8 +1060,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                             ))
                         })
                     })
-                    .await
-                    .unwrap();
+                    .await?;
                 break;
             }
         }
