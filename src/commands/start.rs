@@ -46,6 +46,14 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
         return Ok(());
     }
 
+    let queue = context.data().user_queue.lock().await.clone();
+    if queue.len() < 10 {
+        context
+            .send(|m| m.ephemeral(true).content("The queue is not full yet"))
+            .await?;
+        return Ok(());
+    }
+
     {
         let mut state = context.data().state.lock().await;
         if *state != State::Queue {
