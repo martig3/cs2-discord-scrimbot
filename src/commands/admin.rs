@@ -3,6 +3,13 @@ use crate::{
     Context, State,
 };
 use anyhow::Result;
+use async_std::task;
+use chrono::DateTime;
+use chrono::Datelike;
+use chrono::Duration as ChronoDuration;
+use chrono::Local;
+use chrono::TimeZone;
+use core::time::Duration as CoreDuration;
 use poise::{command, serenity_prelude::User};
 use serenity::utils::MessageBuilder;
 #[command(
@@ -10,11 +17,12 @@ use serenity::utils::MessageBuilder;
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("map", "queue", "setup")
+    subcommands("map", "queue", "setup", "autoclear")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
 }
+
 #[command(slash_command, guild_only, ephemeral, subcommands("cancel"))]
 pub(crate) async fn setup(_context: Context<'_>) -> Result<()> {
     Ok(())
@@ -174,4 +182,56 @@ pub(crate) async fn kick(context: Context<'_>, user: User) -> Result<()> {
     context.say(response).await?;
 
     Ok(())
+}
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    description_localized("en-US", "Enable autoclear feature")
+)]
+pub(crate) async fn autoclear(context: Context<'_>) -> Result<()> {
+    let Some(autoclear_hour) = context.data().config.autoclear_hour else {
+        context.say("Autoclear config not set").await?;
+        return Ok(());
+    };
+    context.say("Autoclear feature started").await?;
+    loop {
+        let current: DateTime<Local> = Local::now();
+        let mut autoclear: DateTime<Local> = Local
+            .with_ymd_and_hms(
+                current.year(),
+                current.month(),
+                current.day(),
+                autoclear_hour,
+                0,
+                0,
+            )
+            .unwrap();
+        if autoclear.signed_duration_since(current).num_milliseconds() < 0 {
+            autoclear = autoclear + ChronoDuration::days(1)
+        }
+        let time_between: ChronoDuration = autoclear.signed_duration_since(current);
+        task::sleep(CoreDuration::from_millis(
+            time_between.num_milliseconds() as u64
+        ))
+        .await;
+        {
+            let mut user_queue = context.data().user_queue.lock().await;
+            user_queue.clear();
+            write_to_file(
+                String::from("data/queue.json"),
+                serde_json::to_string(&user_queue.clone()).unwrap(),
+            )
+            .await;
+        }
+        {
+            let mut queued_msgs = context.data().queue_messages.lock().await;
+            queued_msgs.clear();
+            write_to_file(
+                String::from("data/queue-messages.json"),
+                serde_json::to_string(&queued_msgs.clone()).unwrap(),
+            )
+            .await;
+        }
+    }
 }
