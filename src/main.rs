@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::builder()
         .filter_level(log::LevelFilter::Warn)
-        .filter_module("csgo-scrimbot", log::LevelFilter::Info)
+        .filter_module("csgo-discord-scrimbot", log::LevelFilter::Info)
         .parse_default_env()
         .init();
 
@@ -259,38 +259,3 @@ async fn read_queue_msgs() -> Result<HashMap<u64, String>, serde_json::Error> {
         Ok(HashMap::new())
     }
 }
-
-// async fn autoclear_queue(context: &Context) {
-//     let autoclear_hour = get_autoclear_hour(context).await;
-//     if let Some(autoclear_hour) = autoclear_hour {
-//         println!("Autoclear feature started");
-//         loop {
-//             let current: DateTime<Local> = Local::now();
-//             let mut autoclear: DateTime<Local> = Local
-//                 .ymd(current.year(), current.month(), current.day())
-//                 .and_hms(autoclear_hour, 0, 0);
-//             if autoclear.signed_duration_since(current).num_milliseconds() < 0 {
-//                 autoclear = autoclear + ChronoDuration::days(1)
-//             }
-//             let time_between: ChronoDuration = autoclear.signed_duration_since(current);
-//             task::sleep(CoreDuration::from_millis(
-//                 time_between.num_milliseconds() as u64
-//             ))
-//             .await;
-//             {
-//                 let mut data = context.data.write().await;
-//                 let user_queue: &mut Vec<User> = data.get_mut::<UserQueue>().unwrap();
-//                 user_queue.clear();
-//                 let queued_msgs: &mut HashMap<u64, String> =
-//                     data.get_mut::<QueueMessages>().unwrap();
-//                 queued_msgs.clear();
-//             }
-//         }
-//     }
-// }
-
-// async fn get_autoclear_hour(client: &Context) -> Option<u32> {
-//     let data = client.data.write().await;
-//     let config: &Config = data.get::<Config>().unwrap();
-//     config.autoclear_hour
-// }
