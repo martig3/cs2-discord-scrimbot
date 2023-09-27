@@ -1,6 +1,11 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use crate::{
+    utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
+    Context, State,
+};
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose, Engine};
 use poise::{
     command,
     serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
@@ -13,11 +18,6 @@ use serenity::{
     futures::StreamExt,
     model::application::interaction::message_component::MessageComponentInteraction,
     utils::MessageBuilder,
-};
-
-use crate::{
-    utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
-    Context, State,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -381,7 +381,7 @@ async fn calc_selected_map(context: &Context<'_>) -> Result<String> {
     }
 
     let map = &max_maps
-        .get(rand::thread_rng().gen_range(0, max_maps.len()))
+        .get(rand::thread_rng().gen_range(0..max_maps.len()))
         .unwrap();
 
     Ok(map.to_string())
@@ -879,7 +879,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         auth_str.push_str(&scrim_api_config.scrimbot_api_user.as_ref().unwrap());
         auth_str.push(':');
         auth_str.push_str(&scrim_api_config.scrimbot_api_password.as_ref().unwrap());
-        let base64 = base64::encode(&auth_str);
+        let base64 = general_purpose::STANDARD.encode(&auth_str);
         let mut auth_str = String::from("Basic ");
         auth_str.push_str(&base64);
         println!("webhook_authorization_header: '{}'", auth_str);
