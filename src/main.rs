@@ -1,9 +1,7 @@
-use crate::admin::admin;
-use crate::queue::queue;
+use crate::commands::admin::admin;
+use crate::commands::queue::queue;
 use anyhow::Error;
 use anyhow::Result;
-use commands::admin;
-use commands::queue;
 use commands::start::start;
 use commands::stats::stats;
 use commands::steamid::steam_id;
@@ -15,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serenity::model::gateway::GatewayIntents;
 use serenity::model::user::User;
 use std::collections::HashMap;
+
 mod commands;
 mod utils;
 
