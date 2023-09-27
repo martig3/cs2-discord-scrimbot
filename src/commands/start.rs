@@ -91,6 +91,7 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
             None => {
                 msg.edit(context, |m| {
                     m.content("Start process timed out. Start again when all users are present using `/start`")
+                        .components(|c| c)
                 }).await?;
                 reset_draft(&context).await?;
                 return Ok(());
