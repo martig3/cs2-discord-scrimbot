@@ -236,3 +236,25 @@ pub async fn reset_draft(context: &Context<'_>) -> Result<()> {
     draft.selected_map = String::new();
     Ok(())
 }
+
+pub async fn clear_queue(context: &Context<'_>) -> Result<()> {
+    {
+        let mut user_queue = context.data().user_queue.lock().await;
+        user_queue.clear();
+        write_to_file(
+            String::from("data/queue.json"),
+            serde_json::to_string(&user_queue.clone()).unwrap(),
+        )
+        .await;
+    }
+    {
+        let mut queue_messages = context.data().user_queue.lock().await;
+        queue_messages.clear();
+        write_to_file(
+            String::from("data/queue-messages.json"),
+            serde_json::to_string(&queue_messages.clone()).unwrap(),
+        )
+        .await;
+    }
+    Ok(())
+}

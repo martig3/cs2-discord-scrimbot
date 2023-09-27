@@ -1,3 +1,4 @@
+use crate::utils::clear_queue;
 use crate::{
     utils::{reset_draft, write_to_file},
     Context, State,
@@ -12,6 +13,7 @@ use chrono::TimeZone;
 use core::time::Duration as CoreDuration;
 use poise::{command, serenity_prelude::User};
 use serenity::utils::MessageBuilder;
+
 #[command(
     slash_command,
     guild_only,
@@ -45,10 +47,7 @@ pub(crate) async fn cancel(context: Context<'_>) -> Result<()> {
     description_localized("en-US", "Clear the queue")
 )]
 pub(crate) async fn clear(context: Context<'_>) -> Result<()> {
-    {
-        let mut user_queue = context.data().user_queue.lock().await;
-        user_queue.clear();
-    }
+    clear_queue(&context).await?;
     context.say("Queue cleared").await?;
     Ok(())
 }
@@ -215,23 +214,6 @@ pub(crate) async fn autoclear(context: Context<'_>) -> Result<()> {
             time_between.num_milliseconds() as u64
         ))
         .await;
-        {
-            let mut user_queue = context.data().user_queue.lock().await;
-            user_queue.clear();
-            write_to_file(
-                String::from("data/queue.json"),
-                serde_json::to_string(&user_queue.clone()).unwrap(),
-            )
-            .await;
-        }
-        {
-            let mut queued_msgs = context.data().queue_messages.lock().await;
-            queued_msgs.clear();
-            write_to_file(
-                String::from("data/queue-messages.json"),
-                serde_json::to_string(&queued_msgs.clone()).unwrap(),
-            )
-            .await;
-        }
+        clear_queue(&context).await?;
     }
 }
