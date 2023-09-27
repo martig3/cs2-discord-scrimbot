@@ -554,6 +554,10 @@ async fn handle_captain_pick(
     context: &Context<'_>,
     mci: &MessageComponentInteraction,
 ) -> Result<()> {
+    let in_queue = user_in_queue(&context, Some(&mci)).await?;
+    if !in_queue {
+        return Ok(());
+    }
     let draft = context.data().draft.lock().await.clone();
     if let Some(user) = &draft.captain_a {
         if user.id == mci.user.id {
