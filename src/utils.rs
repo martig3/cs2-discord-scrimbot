@@ -8,12 +8,12 @@ use std::collections::HashMap;
 // use std::collections::HashMap;
 use anyhow::Result;
 
+use crate::{Context, Draft, ScrimbotApiConfig, State};
+use base64::{engine::general_purpose, Engine};
 use poise::serenity_prelude::{Guild, InteractionResponseType, MessageComponentInteraction, User};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serenity::{http::CacheHttp, utils::MessageBuilder};
-
-use crate::{Context, Draft, ScrimbotApiConfig, State};
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
@@ -214,7 +214,7 @@ pub fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
     let mut auth_str = config.scrimbot_api_user.as_ref().unwrap().clone();
     auth_str.push(':');
     auth_str.push_str(&config.scrimbot_api_password.as_ref().unwrap().clone());
-    let base64 = base64::encode(auth_str);
+    let base64 = general_purpose::STANDARD.encode(auth_str);
     let mut auth_str = String::from("Basic ");
     auth_str.push_str(&base64);
     headers.insert("Authorization", auth_str.parse().unwrap());
