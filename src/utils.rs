@@ -13,7 +13,7 @@ use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serenity::{http::CacheHttp, utils::MessageBuilder};
 
-use crate::{Context, Draft, ScrimbotApiConfig};
+use crate::{Context, Draft, ScrimbotApiConfig, State};
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
@@ -225,14 +225,24 @@ pub fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
     client
 }
 pub async fn reset_draft(context: &Context<'_>) -> Result<()> {
-    let mut draft = context.data().draft.lock().await;
-    draft.captain_a = None;
-    draft.captain_b = None;
-    draft.current_picker = None;
-    draft.team_a = Vec::new();
-    draft.team_b = Vec::new();
-    draft.team_b_start_side = String::from("");
-    draft.map_votes = HashMap::new();
-    draft.selected_map = String::new();
+    {
+        let mut draft = context.data().draft.lock().await;
+        draft.captain_a = None;
+        draft.captain_b = None;
+        draft.current_picker = None;
+        draft.team_a = Vec::new();
+        draft.team_b = Vec::new();
+        draft.team_b_start_side = String::from("");
+        draft.map_votes = HashMap::new();
+        draft.selected_map = String::new();
+    }
+    {
+        let mut ready_queue = context.data().ready_queue.lock().await;
+        ready_queue.clear();
+    }
+    {
+        let mut state = context.data().state.lock().await;
+        *state = State::Queue;
+    }
     Ok(())
 }
