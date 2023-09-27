@@ -248,6 +248,12 @@ async fn handle_sidepick(context: &Context<'_>, mci: &MessageComponentInteractio
 
 async fn handle_draft(context: &Context<'_>, mci: &MessageComponentInteraction) -> Result<()> {
     let draft = context.data().draft.lock().await.clone();
+    if draft.current_picker.is_none() {
+        {
+            let mut draft = context.data().draft.lock().await;
+            draft.current_picker = draft.captain_a.clone();
+        }
+    }
     if mci.user.id != draft.current_picker.unwrap().id {
         mci.create_interaction_response(context, |m| {
             m.interaction_response_data(|d| {
@@ -259,7 +265,6 @@ async fn handle_draft(context: &Context<'_>, mci: &MessageComponentInteraction) 
         return Ok(());
     }
     let user_id = mci.data.values.get(0).unwrap();
-    println!("user_id: {}", user_id);
     let user_id = user_id.parse::<u64>()?;
     let queue = context.data().user_queue.lock().await.clone();
     let user = queue.iter().find(|u| u.id.0 == user_id).unwrap().clone();
