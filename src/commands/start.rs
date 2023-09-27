@@ -549,6 +549,15 @@ async fn handle_captain_pick(
     context: &Context<'_>,
     mci: &MessageComponentInteraction,
 ) -> Result<()> {
+    let user_queue = &context.data().user_queue.lock().await.clone();
+    let msg_user = user_queue.iter().find(|u| u.id == context.author().id);
+    if msg_user.is_none() {
+        mci.create_interaction_response(context, |m| {
+            m.interaction_response_data(|d| d.ephemeral(true).content("You are not in the queue"))
+        })
+        .await?;
+        return Ok(());
+    }
     let draft = context.data().draft.lock().await.clone();
     if let Some(user) = &draft.captain_a {
         if user.id == mci.user.id {
