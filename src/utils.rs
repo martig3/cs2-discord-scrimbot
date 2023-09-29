@@ -258,7 +258,7 @@ pub async fn clear_queue(context: &Context<'_>) -> Result<()> {
         .await;
     }
     {
-        let mut queue_messages = context.data().user_queue.lock().await;
+        let mut queue_messages = context.data().queue_messages.lock().await;
         queue_messages.clear();
         write_to_file(
             String::from("data/queue-messages.json"),
