@@ -58,6 +58,9 @@ pub(crate) async fn stats(
                 options.push(("steamid", steam_id));
                 print_map = true;
             }
+            &"top10" => {
+                options.push(("mapCountLimit", "10".to_string()));
+            }
             _ => (),
         }
         options.push(("option", type_option.as_str().to_string()));
