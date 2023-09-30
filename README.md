@@ -47,8 +47,3 @@ scrimbot_api_config: -- optional, experimental section
   scrimbot_api_password: <scrimbot-api password>
 ```
 **Note:** Make sure to only allow the bot to listen/read messages in one channel only via the discord server settings -> integrations options.
-
-
-`.clear` - Clear the queue
-
-`.cancel` - Cancels `.start` process
