@@ -872,7 +872,6 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     } else {
         config.dathost.match_end_url.as_ref().unwrap()
     };
-    let start_match_url = String::from("https://dathost.net/api/0.1/matches");
     println!("match_end_webhook_url:'{}'", &match_end_url);
     println!("game_server_id:'{}'", &server_id);
     let mut auth_str = String::new();
@@ -885,8 +884,9 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         auth_str.push_str(&base64);
         println!("webhook_authorization_header: '{}'", auth_str);
     }
+
     let resp = client
-        .post(&start_match_url)
+        .post(&"https://dathost.net/api/0.1/cs2-matches".to_string())
         .form(&[
             ("game_server_id", &server_id),
             ("team1_steam_ids", &&team_t),
