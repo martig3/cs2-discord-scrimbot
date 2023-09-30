@@ -1,4 +1,4 @@
-# csgo-discord-scrimbot
+# cs2-discord-scrimbot
 
 Discord bot for managing, automating & organizing 10 man scrims in CSGO
 
@@ -40,10 +40,6 @@ discord:
   privileged_role_ids: [ string list of discord role ids ]  -- optional
   team_a_channel_id: <a discord text channel id>  -- optional
   team_b_channel_id: <a discord text channel id>  -- optional
-  emote_ct_id: <a custom discord emote id>  -- optional
-  emote_t_id: <a custom discord emote id> -- optional
-  emote_ct_name: <a custom discord emote name> -- optional
-  emote_t_name: <a custom discord emote name> -- optional
   assign_role_id: <a dicord role id to assign for user on queue join> -- optional
 scrimbot_api_config: -- optional, experimental section
   scrimbot_api_url: <scrimbot-api url>
@@ -52,46 +48,6 @@ scrimbot_api_config: -- optional, experimental section
 ```
 **Note:** Make sure to only allow the bot to listen/read messages in one channel only via the discord server settings -> integrations options.
 
-## Commands
-
-`.join` - Join the queue, add an optional message in quotes (max 50 characters) i.e. `.join "available at 9pm"`
-
-`.leave` - Leave the queue
-
-`.queue` - List all users in the queue
-
-`.steamid` - Set your steamID i.e. `.steamid STEAM_0:1:12345678`
-
-`.maps` - Lists all maps in available for play
-
-`.stats` - _Experimental Feature_: Lists all available statistics for user via [Scrimbot-API](https://github.com/Martig3/scrimbot-api) integration. Full param list: `.stats (top10|maps) [0-9]m "de_mapname"`
-
-`.teamname` - Sets a custom team name when you are a captain i.e. `.teamname TeamName`
-
-_These are commands used during the `.start` process:_
-
-`.captain` - Add yourself as a captain.
-
-`.pick` - If you are a captain, this is used to pick a player
-
-`.ready` - After the draft phase is completed, use this to ready up
-
-`.unready` - After the draft phase is completed, use this to cancel your `.ready` status
-
-`.readylist` - Lists players not readied up
-
-**Admin Commands**
-
-`.start` - Start the match setup process
-
-`.kick` - Kick a player by mentioning them i.e. `.kick @user`
-
-`.addmap` - Add a map to the map vote i.e. `.addmap de_dust2` _Note: map must be present on the server or the server
-will not start._
-
-`.removemap` - Remove a map from the map vote i.e. `.removemap de_dust2`
-
-`.recoverqueue` - Manually set a queue, tag all users to add after the command
 
 `.clear` - Clear the queue
 
