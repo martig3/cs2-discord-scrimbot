@@ -244,6 +244,7 @@ pub async fn reset_draft(context: &Context<'_>) -> Result<()> {
         let mut state = context.data().state.lock().await;
         *state = State::Queue;
     }
+    clear_queue(context).await?;
     Ok(())
 }
 
