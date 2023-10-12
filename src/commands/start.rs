@@ -19,6 +19,43 @@ use serenity::{
     model::application::interaction::message_component::MessageComponentInteraction,
     utils::MessageBuilder,
 };
+use steamid::{AccountType, Instance, SteamId, Universe};
+trait ParseWithDefaults: Sized {
+    fn parse<S: AsRef<str>>(value: S) -> Result<Self>;
+}
+
+impl ParseWithDefaults for SteamId {
+    fn parse<S: AsRef<str>>(value: S) -> Result<Self> {
+        let mut steamid =
+            SteamId::parse_steam2id(value, AccountType::Individual, Instance::Desktop)?;
+        steamid.set_universe(Universe::Public);
+        Ok(steamid)
+    }
+}
+#[derive(Serialize, Deserialize)]
+pub struct MatchTeam {
+    name: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct MatchSettings {
+    map: String,
+    password: String,
+    connect_time: i32,
+    match_begin_countdown: i32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct MatchWebhooks {
+    match_end_url: String,
+    authorization_header: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct StartMatch {
+    team1: MatchTeam,
+    team2: MatchTeam,
+    players: Vec<Player>,
+    settings: MatchSettings,
+    webhooks: MatchWebhooks,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerInfoResponse {
@@ -35,6 +72,23 @@ pub struct Ports {
     pub gotv: i64,
 }
 
+enum Team {
+    Team1,
+    Team2,
+}
+impl Team {
+    fn to_string(&self) -> String {
+        match &self {
+            Team::Team1 => "team1".to_string(),
+            Team::Team2 => "team2".to_string(),
+        }
+    }
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct Player {
+    pub steam_id_64: String,
+    pub team: String,
+}
 #[command(
     slash_command,
     guild_only,
@@ -826,41 +880,35 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     let msg = context.send(|m| m.content(response)).await?;
     let draft = context.data().draft.lock().await.clone();
     let steam_ids = context.data().steam_id_cache.lock().await.clone();
-    let mut team_a_steam_ids: Vec<String> = draft
+    let team_a_players: Vec<Player> = draft
         .team_a
         .iter()
         .map(|u| steam_ids.get(u.id.as_u64()).unwrap().to_string())
+        .map(|s| u64::from(SteamId::parse(s).unwrap()))
+        .map(|s| Player {
+            steam_id_64: s.to_string(),
+            team: match draft.team_b_start_side == "t" {
+                true => Team::Team1.to_string(),
+                false => Team::Team2.to_string(),
+            },
+        })
         .collect();
-    for team_a_steam_id in &mut team_a_steam_ids {
-        team_a_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_a_steam_id_str: String =
-        team_a_steam_ids.iter().map(|s| format!("{},", s)).collect();
-    team_a_steam_id_str = String::from(&team_a_steam_id_str[..team_a_steam_id_str.len() - 1]);
-    let mut team_b_steam_ids: Vec<String> = draft
+    let team_b_players: Vec<Player> = draft
         .team_b
         .iter()
         .map(|u| steam_ids.get(u.id.as_u64()).unwrap().to_string())
+        .map(|s| u64::from(SteamId::parse(s).unwrap()))
+        .map(|s| Player {
+            steam_id_64: s.to_string(),
+            team: match draft.team_b_start_side == "ct" {
+                true => Team::Team1.to_string(),
+                false => Team::Team2.to_string(),
+            },
+        })
         .collect();
-    for team_b_steam_id in &mut team_b_steam_ids {
-        team_b_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_b_steam_id_str: String =
-        team_b_steam_ids.iter().map(|s| format!("{},", s)).collect();
-    team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
-    let team_ct: String;
-    let team_t: String;
-    if draft.team_b_start_side == "ct" {
-        team_ct = team_b_steam_id_str;
-        team_t = team_a_steam_id_str;
-    } else {
-        team_ct = team_a_steam_id_str;
-        team_t = team_b_steam_id_str;
-    }
-
+    let players: Vec<Player> = team_a_players.into_iter().chain(team_b_players).collect();
     println!("Starting server with the following params:");
-    println!("team1_steam_ids:'{}'", &team_t);
-    println!("team2_steam_ids:'{}'", &team_ct);
+    println!("Players:'{:#?}'", &players);
 
     let config = &context.data().config;
     let client = reqwest::Client::new();
@@ -872,30 +920,56 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     } else {
         config.dathost.match_end_url.as_ref().unwrap()
     };
-    println!("match_end_webhook_url:'{}'", &match_end_url);
     println!("game_server_id:'{}'", &server_id);
-    let mut auth_str = String::new();
+    println!("match_end_webhook_url:'{}'", &match_end_url);
+    let mut authorization_header = String::new();
     if let Some(scrim_api_config) = config.scrimbot_api_config.clone() {
-        auth_str.push_str(&scrim_api_config.scrimbot_api_user.as_ref().unwrap());
-        auth_str.push(':');
-        auth_str.push_str(&scrim_api_config.scrimbot_api_password.as_ref().unwrap());
-        let base64 = general_purpose::STANDARD.encode(&auth_str);
-        let mut auth_str = String::from("Basic ");
-        auth_str.push_str(&base64);
-        println!("webhook_authorization_header: '{}'", auth_str);
+        authorization_header.push_str(&scrim_api_config.scrimbot_api_user.as_ref().unwrap());
+        authorization_header.push(':');
+        authorization_header.push_str(&scrim_api_config.scrimbot_api_password.as_ref().unwrap());
+        let base64 = general_purpose::STANDARD.encode(&authorization_header);
+        let authorization_header = format!("Basic {}", base64);
+        println!("webhook_authorization_header: '{}'", authorization_header);
     }
 
+    let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
+    let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
+    let team_names = context.data().team_names.lock().await.clone();
+    let team_a_name = team_names
+        .get(draft.captain_a.as_ref().unwrap().id.as_u64())
+        .unwrap_or(default_team_a_name);
+    let team_b_name = team_names
+        .get(draft.captain_b.as_ref().unwrap().id.as_u64())
+        .unwrap_or(default_team_b_name);
+    let team1_name = match draft.team_b_start_side == "t" {
+        true => team_a_name.clone(),
+        false => team_b_name.clone(),
+    };
+    let team2_name = match draft.team_b_start_side == "ct" {
+        true => team_a_name.clone(),
+        false => team_b_name.clone(),
+    };
     let resp = client
         .post(&"https://dathost.net/api/0.1/cs2-matches".to_string())
-        .form(&[
-            ("game_server_id", &server_id),
-            ("team1_steam_ids", &&team_t),
-            ("team2_steam_ids", &&team_ct),
-            ("enable_pause", &&String::from("true")),
-            ("enable_tech_pause", &&String::from("true")),
-            ("webhook_authorization_header", &&auth_str),
-            ("match_end_webhook_url", &&match_end_url.to_string()),
-        ])
+        .json(&StartMatch {
+            team1: MatchTeam { name: team1_name },
+            team2: MatchTeam { name: team2_name },
+            players,
+            settings: MatchSettings {
+                map: draft.selected_map.clone(),
+                connect_time: 60 * 10,
+                match_begin_countdown: 20,
+                password: "".to_string(),
+            },
+            webhooks: MatchWebhooks {
+                match_end_url: config
+                    .dathost
+                    .match_end_url
+                    .clone()
+                    .unwrap_or("".to_string()),
+                authorization_header,
+            },
+        })
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
@@ -910,6 +984,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
             ))
         })
         .await?;
+        return Ok(());
     }
     let server_info_url = format!(
         "https://dathost.net/api/0.1/game-servers/{}",
@@ -948,7 +1023,6 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .await?
         .text()
         .await?;
-    let team_names = context.data().team_names.lock().await.clone();
     let eos = MessageBuilder::new()
         .push_line(list_teams(&draft, &team_names))
         .push_line(format!("Map: `{}`", &draft.selected_map))
@@ -982,65 +1056,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
             }
         }
     }
-    let team_names = context.data().team_names.lock().await.clone();
-    let send_command_url = format!(
-        "https://dathost.net/api/0.1/game-servers/{}/console",
-        &config.dathost.server_id
-    );
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
-    let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
-    let team_a_name = team_names
-        .get(draft.captain_a.as_ref().unwrap().id.as_u64())
-        .unwrap_or(default_team_a_name);
-    let team_b_name = team_names
-        .get(draft.captain_b.as_ref().unwrap().id.as_u64())
-        .unwrap_or(default_team_b_name);
-    let team_one_command;
-    let team_two_command;
-    if draft.team_b_start_side == "ct" {
-        team_one_command = format!("mp_teamname_1 {}", &team_b_name);
-        team_two_command = format!("mp_teamname_2 {}", &team_a_name);
-    } else {
-        team_one_command = format!("mp_teamname_1 {}", &team_a_name);
-        team_two_command = format!("mp_teamname_2 {}", &team_b_name);
-    }
-    if let Err(resp) = client
-        .post(&send_command_url)
-        .form(&[("line", &team_one_command)])
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-    {
-        eprintln!("Error setting team name 1: {:?}", resp);
-    }
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    if let Err(resp) = client
-        .post(&send_command_url)
-        .form(&[("line", &team_two_command)])
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-    {
-        eprintln!("Error setting team name 2: {:?}", resp);
-    }
-    // reset to queue state
-    {
-        let mut user_queue = context.data().user_queue.lock().await;
-        user_queue.clear();
-    }
-    {
-        let mut ready_queue = context.data().user_queue.lock().await;
-        ready_queue.clear();
-    }
-    {
-        let mut state = context.data().state.lock().await;
-        *state = State::Queue;
-    }
-    {
-        let mut queue_msgs = context.data().queue_messages.lock().await;
-        queue_msgs.clear();
-    }
+
     reset_draft(context).await?;
 
     let mut cib = msg
