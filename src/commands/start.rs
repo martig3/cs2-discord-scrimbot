@@ -911,7 +911,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     println!("Players:'{:#?}'", &players);
 
     let config = &context.data().config;
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server_id = &config.dathost.server_id;
@@ -999,38 +999,38 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .unwrap()
         .json::<ServerInfoResponse>()
         .await?;
-    let client = Client::new();
-    let host_name = if server.custom_domain.is_some() {
-        server.custom_domain.unwrap()
-    } else {
-        server.ip
+    let host_name = match server.custom_domain {
+        Some(s) => s,
+        None => server.ip,
     };
     let game_url = format!("{}:{}", host_name, server.ports.game);
     let gotv_url = format!("{}:{}", host_name, server.ports.gotv);
-    let game_link = format!("steam://connect/{}", &game_url);
-    let gotv_link = format!("steam://connect/{}", &gotv_url);
-    let t_url = client
-        .get("https://tinyurl.com/api-create.php")
-        .query(&[("url", &game_link)])
-        .send()
-        .await?
-        .text()
-        .await?;
-    let t_gotv_url = client
-        .get("https://tinyurl.com/api-create.php")
-        .query(&[("url", &gotv_link)])
-        .send()
-        .await?
-        .text()
-        .await?;
+    // this can later be added back once steam links work again
+    // let game_link = format!("steam://connect/{}", &game_url);
+    // let gotv_link = format!("steam://connect/{}", &gotv_url);
+    // let client = Client::new();
+    // let t_url = client
+    //     .get("https://tinyurl.com/api-create.php")
+    //     .query(&[("url", &game_link)])
+    //     .send()
+    //     .await?
+    //     .text()
+    //     .await?;
+    // let t_gotv_url = client
+    //     .get("https://tinyurl.com/api-create.php")
+    //     .query(&[("url", &gotv_link)])
+    //     .send()
+    //     .await?
+    //     .text()
+    //     .await?;
     let eos = MessageBuilder::new()
         .push_line(list_teams(&draft, &team_names))
-        .push_line(format!("Map: `{}`", &draft.selected_map))
+        .push_line(format!("Map: `{}`\n", &draft.selected_map))
+        .push_line(format!("**Connect:** ||`connect {}`||", &game_url))
         .build();
     msg.edit(context.clone(), |m| {
-        m.content(eos).components(|c| {
-            c.add_action_row(create_server_conn_button_row(&t_url, &t_gotv_url, true))
-        })
+        m.content(eos)
+            .components(|c| c.add_action_row(create_server_conn_button_row(true)))
     })
     .await?;
 
@@ -1073,10 +1073,8 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                 mci.create_interaction_response(context, |r| {
                     r.kind(InteractionResponseType::ChannelMessageWithSource)
                         .interaction_response_data(|d| {
-                            d.ephemeral(true).content(format!(
-                                "Console: ||`connect {}`||\nGOTV: ||`connect {}`||",
-                                &game_url, &gotv_url
-                            ))
+                            d.ephemeral(true)
+                                .content(format!("GOTV: ||`connect {}`||", &gotv_url))
                         })
                 })
                 .await?;
@@ -1086,13 +1084,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                 msg.into_message()
                     .await?
                     .edit(context, |m| {
-                        m.components(|c| {
-                            c.add_action_row(create_server_conn_button_row(
-                                &t_url,
-                                &t_gotv_url,
-                                false,
-                            ))
-                        })
+                        m.components(|c| c.add_action_row(create_server_conn_button_row(false)))
                     })
                     .await?;
                 break;
@@ -1102,31 +1094,15 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn create_server_conn_button_row(
-    url: &String,
-    gotv_url: &String,
-    show_cmds: bool,
-) -> CreateActionRow {
+pub fn create_server_conn_button_row(show_cmds: bool) -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut conn_button = CreateButton::default();
-    conn_button.label("Connect");
-    conn_button.style(ButtonStyle::Link);
-    conn_button.emoji(ReactionType::Unicode("▶".parse().unwrap()));
-    conn_button.url(&url);
-    ar.add_button(conn_button);
     if show_cmds {
         let mut console_button = CreateButton::default();
         console_button.custom_id("console");
-        console_button.label("Console Cmds");
+        console_button.label("GOTV");
         console_button.style(ButtonStyle::Secondary);
-        console_button.emoji(ReactionType::Unicode("🧾".parse().unwrap()));
+        console_button.emoji(ReactionType::Unicode("📺".parse().unwrap()));
         ar.add_button(console_button);
     }
-    let mut gotv_button = CreateButton::default();
-    gotv_button.label("GOTV");
-    gotv_button.style(ButtonStyle::Link);
-    gotv_button.emoji(ReactionType::Unicode("📺".parse().unwrap()));
-    gotv_button.url(gotv_url);
-    ar.add_button(gotv_button);
     ar
 }
