@@ -28,9 +28,8 @@ pub struct Config {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ScrimbotApiConfig {
-    scrimbot_api_url: Option<String>,
-    scrimbot_api_user: Option<String>,
-    scrimbot_api_password: Option<String>,
+    scrimbot_api_url: String,
+    scrimbot_api_token: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

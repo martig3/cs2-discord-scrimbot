@@ -1,15 +1,8 @@
 use std::collections::HashMap;
 
-// use crate::commands::Stats;
-// use crate::{Config, Draft, Maps};
-// use serenity::model::prelude::{Guild, GuildContainer, Message, User};
-// use serenity::prelude::Context;
-// use serenity::utils::MessageBuilder;
-// use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{Context, Draft, ScrimbotApiConfig, State};
-use base64::{engine::general_purpose, Engine};
 use poise::serenity_prelude::{Guild, InteractionResponseType, MessageComponentInteraction, User};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
@@ -211,12 +204,7 @@ pub(crate) async fn user_in_queue(
 
 pub fn get_api_client(config: &ScrimbotApiConfig) -> reqwest::Client {
     let mut headers = header::HeaderMap::new();
-    let mut auth_str = config.scrimbot_api_user.as_ref().unwrap().clone();
-    auth_str.push(':');
-    auth_str.push_str(&config.scrimbot_api_password.as_ref().unwrap().clone());
-    let base64 = general_purpose::STANDARD.encode(auth_str);
-    let mut auth_str = String::from("Basic ");
-    auth_str.push_str(&base64);
+    let auth_str = format!("TOKEN {}", &config.scrimbot_api_token);
     headers.insert("Authorization", auth_str.parse().unwrap());
     let client = reqwest::Client::builder()
         .default_headers(headers)

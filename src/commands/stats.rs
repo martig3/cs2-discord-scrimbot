@@ -74,10 +74,7 @@ pub(crate) async fn stats(
         options.push(("map", map_option.to_string()));
     };
     let resp = client
-        .get(&format!(
-            "{}/stats",
-            api_config.scrimbot_api_url.as_ref().unwrap()
-        ))
+        .get(&format!("{}/stats", &api_config.scrimbot_api_url))
         .query(options.as_slice())
         .send()
         .await
