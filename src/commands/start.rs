@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use crate::utils::clear_queue;
 use crate::{
     utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
     Context, State,
@@ -19,6 +20,7 @@ use serenity::{
     utils::MessageBuilder,
 };
 use steamid::{AccountType, Instance, SteamId, Universe};
+
 trait ParseWithDefaults: Sized {
     fn parse<S: AsRef<str>>(value: S) -> Result<Self>;
 }
@@ -100,12 +102,12 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     }
 
     let queue = context.data().user_queue.lock().await.clone();
-    if queue.len() < 10 {
-        context
-            .send(|m| m.ephemeral(true).content("The queue is not full yet"))
-            .await?;
-        return Ok(());
-    }
+    // if queue.len() < 10 {
+    //     context
+    //         .send(|m| m.ephemeral(true).content("The queue is not full yet"))
+    //         .await?;
+    //     return Ok(());
+    // }
 
     {
         let mut state = context.data().state.lock().await;
@@ -1052,6 +1054,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     }
 
     reset_draft(context).await?;
+    clear_queue(context).await?;
 
     let mut cib = msg
         .clone()
