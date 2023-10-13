@@ -473,12 +473,12 @@ async fn handle_draft_type(
 
 fn create_captain_action_row() -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut autdraft_button = CreateButton::default();
-    autdraft_button.custom_id("captain");
-    autdraft_button.label("Become Captain");
-    autdraft_button.style(ButtonStyle::Success);
-    autdraft_button.emoji('🎖');
-    ar.add_button(autdraft_button);
+    let mut captain_button = CreateButton::default();
+    captain_button.custom_id("captain");
+    captain_button.label("Become Captain");
+    captain_button.style(ButtonStyle::Success);
+    captain_button.emoji('🎖');
+    ar.add_button(captain_button);
     ar
 }
 
@@ -572,17 +572,18 @@ pub fn create_menu_option(label: &str, value: &str) -> CreateSelectMenuOption {
 
 pub fn create_draft_type_action_row() -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut autdraft_button = CreateButton::default();
-    autdraft_button.custom_id("autodraft");
-    autdraft_button.label("Auto Draft");
-    autdraft_button.style(ButtonStyle::Primary);
-    autdraft_button.emoji('🤖');
+    let mut autodraft_button = CreateButton::default();
+    autodraft_button.custom_id("autodraft");
+    autodraft_button.label("Auto Draft");
+    autodraft_button.style(ButtonStyle::Primary);
+    autodraft_button.disabled(true);
+    autodraft_button.emoji('🤖');
     let mut manual_button = CreateButton::default();
     manual_button.custom_id("manualdraft");
     manual_button.label("Manual Draft");
     manual_button.style(ButtonStyle::Secondary);
     manual_button.emoji('⚙');
-    ar.add_button(autdraft_button);
+    ar.add_button(autodraft_button);
     ar.add_button(manual_button);
     ar
 }
