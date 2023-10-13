@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
-    Context, State,
+    Context, ScrimbotApiConfig, State,
 };
 use anyhow::{anyhow, Result};
 use poise::{
