@@ -5,7 +5,6 @@ use crate::{
     Context, State,
 };
 use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose, Engine};
 use poise::{
     command,
     serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
@@ -717,34 +716,18 @@ async fn handle_autodraft(
         .collect();
 
     let config = context.data().config.clone();
-    if config
-        .scrimbot_api_config
-        .as_ref()
-        .unwrap()
-        .scrimbot_api_user
-        == None
-        || config
-            .scrimbot_api_config
-            .as_ref()
-            .unwrap()
-            .scrimbot_api_password
-            == None
+    let Some(scrimbot_api_config) = config.scrimbot_api_config else
     {
         context.send(|m| m.ephemeral(true).content("Sorry, the scrimbot-api user/password has not been configured. This option is unavailable.")).await?;
         return Ok(());
-    }
+    };
 
-    let client = get_api_client(&config.clone().scrimbot_api_config.unwrap());
+    let client = get_api_client(&scrimbot_api_config);
 
     let resp = client
         .get(&format!(
             "{}/stats",
-            &config
-                .scrimbot_api_config
-                .unwrap()
-                .scrimbot_api_url
-                .clone()
-                .unwrap()
+            scrimbot_api_config.scrimbot_api_url.clone()
         ))
         .query(&[("steamids", &steamids), ("option", &"players".to_string())])
         .send()
@@ -922,15 +905,10 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     };
     println!("game_server_id:'{}'", &server_id);
     println!("match_end_webhook_url:'{}'", &match_end_url);
-    let mut authorization_header = String::new();
-    if let Some(scrim_api_config) = config.scrimbot_api_config.clone() {
-        authorization_header.push_str(&scrim_api_config.scrimbot_api_user.as_ref().unwrap());
-        authorization_header.push(':');
-        authorization_header.push_str(&scrim_api_config.scrimbot_api_password.as_ref().unwrap());
-        let base64 = general_purpose::STANDARD.encode(&authorization_header);
-        let authorization_header = format!("Basic {}", base64);
-        println!("webhook_authorization_header: '{}'", authorization_header);
-    }
+    let authorization_header = match config.scrimbot_api_config.clone() {
+        None => "".to_string(),
+        Some(c) => format!("TOKEN {}", c.scrimbot_api_token),
+    };
 
     let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
     let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
