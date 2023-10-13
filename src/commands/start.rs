@@ -158,7 +158,10 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     let map_list = context.data().maps.lock().await.clone();
     msg.edit(context, |f| {
         f.content("Map vote phase: vote for 1 or more maps")
-            .components(|c| c.add_action_row(create_map_action_row(map_list.clone())))
+            .components(|c| {
+                c.add_action_row(create_map_action_row(map_list.clone()))
+                    .add_action_row(create_map_vote_action_row())
+            })
     })
     .await?;
 
@@ -172,10 +175,7 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
         let opt = cib.next().await;
         match opt {
             Some(mci) => {
-                let completed = handle_map_pick(&context, &mci).await?;
-                if completed {
-                    break;
-                }
+                handle_map_pick(&context, &mci).await?;
             }
             None => {
                 break;
@@ -485,32 +485,38 @@ fn create_captain_action_row() -> CreateActionRow {
 pub async fn handle_map_pick(
     context: &Context<'_>,
     mci: &Arc<MessageComponentInteraction>,
-) -> Result<bool> {
+) -> Result<()> {
     let in_queue = user_in_queue(context, Some(mci)).await?;
     if !in_queue {
-        return Ok(false);
-    }
-    let maps_selected = &mci.data.values;
-    let map_votes = {
-        let mut draft = context.data().draft.lock().await;
-        draft
-            .map_votes
-            .insert(mci.user.clone(), maps_selected.clone());
-        draft.map_votes.clone()
-    };
-    let queue_len = context.data().user_queue.lock().await.clone().len();
-
-    mci.create_interaction_response(context, |r| {
-        r.kind(InteractionResponseType::DeferredUpdateMessage)
-            .interaction_response_data(|d| d)
-    })
-    .await?;
-
-    if queue_len == map_votes.len() {
-        return Ok(true);
+        return Ok(());
     }
 
-    Ok(false)
+    if mci.data.custom_id != "vote" {
+        let maps_selected = &mci.data.values;
+        {
+            let mut draft = context.data().draft.lock().await;
+            draft
+                .map_votes
+                .insert(mci.user.clone(), maps_selected.clone());
+            draft.map_votes.clone()
+        };
+    }
+
+    if mci.data.custom_id == "vote" {
+        mci.create_interaction_response(context, |r| {
+            r.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| d.ephemeral(true).content("Map vote submitted"))
+        })
+        .await?;
+    } else {
+        mci.create_interaction_response(context, |r| {
+            r.kind(InteractionResponseType::DeferredUpdateMessage)
+                .interaction_response_data(|d| d)
+        })
+        .await?;
+    }
+
+    Ok(())
 }
 
 pub fn create_map_action_row(map_list: Vec<String>) -> CreateActionRow {
@@ -530,6 +536,15 @@ pub fn create_map_action_row(map_list: Vec<String>) -> CreateActionRow {
     menu.min_values(1);
     menu.max_values(map_len.try_into().unwrap());
     ar.add_select_menu(menu);
+    ar
+}
+pub fn create_map_vote_action_row() -> CreateActionRow {
+    let mut ar = CreateActionRow::default();
+    let mut button = CreateButton::default();
+    button.label("Vote");
+    button.style(ButtonStyle::Success);
+    button.custom_id("vote");
+    ar.add_button(button);
     ar
 }
 pub fn create_user_action_row(user_list: Vec<User>) -> CreateActionRow {
