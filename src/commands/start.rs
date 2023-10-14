@@ -33,24 +33,25 @@ impl ParseWithDefaults for SteamId {
         Ok(steamid)
     }
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MatchTeam {
     name: String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MatchSettings {
     map: String,
     password: String,
     connect_time: i32,
     match_begin_countdown: i32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MatchWebhooks {
-    match_end_url: String,
+    match_end_url: Option<String>,
     authorization_header: String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StartMatch {
+    game_server_id: String,
     team1: MatchTeam,
     team2: MatchTeam,
     players: Vec<Player>,
@@ -102,12 +103,12 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     }
 
     let queue = context.data().user_queue.lock().await.clone();
-    // if queue.len() < 10 {
-    //     context
-    //         .send(|m| m.ephemeral(true).content("The queue is not full yet"))
-    //         .await?;
-    //     return Ok(());
-    // }
+    if queue.len() < 10 {
+        context
+            .send(|m| m.ephemeral(true).content("The queue is not full yet"))
+            .await?;
+        return Ok(());
+    }
 
     {
         let mut state = context.data().state.lock().await;
@@ -908,21 +909,12 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         })
         .collect();
     let players: Vec<Player> = team_a_players.into_iter().chain(team_b_players).collect();
-    println!("Starting server with the following params:");
-    println!("Players:'{:#?}'", &players);
 
     let config = &context.data().config;
-    let client = Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server_id = &config.dathost.server_id;
-    let match_end_url = if config.dathost.match_end_url == None {
-        ""
-    } else {
-        config.dathost.match_end_url.as_ref().unwrap()
-    };
-    println!("game_server_id:'{}'", &server_id);
-    println!("match_end_webhook_url:'{}'", &match_end_url);
+    let match_end_url = config.dathost.match_end_url.clone();
     let authorization_header = match config.scrimbot_api_config.clone() {
         None => "".to_string(),
         Some(c) => format!("TOKEN {}", c.scrimbot_api_token),
@@ -945,27 +937,28 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         true => team_a_name.clone(),
         false => team_b_name.clone(),
     };
+    let body = &StartMatch {
+        game_server_id: server_id.clone(),
+        team1: MatchTeam { name: team1_name },
+        team2: MatchTeam { name: team2_name },
+        players,
+        settings: MatchSettings {
+            map: draft.selected_map.clone(),
+            connect_time: 60 * 10,
+            match_begin_countdown: 20,
+            password: "".to_string(),
+        },
+        webhooks: MatchWebhooks {
+            match_end_url,
+            authorization_header,
+        },
+    };
+    println!("Starting server with the following params:");
+    println!("{:#?}", &body);
+    let client = Client::new();
     let resp = client
         .post(&"https://dathost.net/api/0.1/cs2-matches".to_string())
-        .json(&StartMatch {
-            team1: MatchTeam { name: team1_name },
-            team2: MatchTeam { name: team2_name },
-            players,
-            settings: MatchSettings {
-                map: draft.selected_map.clone(),
-                connect_time: 60 * 10,
-                match_begin_countdown: 20,
-                password: "".to_string(),
-            },
-            webhooks: MatchWebhooks {
-                match_end_url: config
-                    .dathost
-                    .match_end_url
-                    .clone()
-                    .unwrap_or("".to_string()),
-                authorization_header,
-            },
-        })
+        .json(body)
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
@@ -996,7 +989,13 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .json::<ServerInfoResponse>()
         .await?;
     let host_name = match server.custom_domain {
-        Some(s) => s,
+        Some(s) => {
+            if s.is_empty() {
+                server.ip
+            } else {
+                s
+            }
+        }
         None => server.ip,
     };
     let game_url = format!("{}:{}", host_name, server.ports.game);
