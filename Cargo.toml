@@ -1,6 +1,6 @@
 [package]
 name = "csgo-discord-scrimbot"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["MartinWienc <32913968+MartinWienc@users.noreply.github.com>"]
 edition = "2021"
 
@@ -23,3 +23,4 @@ dotenvy = "0.15.6"
 env_logger = "0.10.0"
 log = "*"
 futures = "0.3.28"
+steamid = { git = "https://github.com/JohnPeel/steamid" }

@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use crate::utils::clear_queue;
 use crate::{
     utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
     Context, State,
 };
 use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose, Engine};
 use poise::{
     command,
     serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
@@ -19,6 +19,45 @@ use serenity::{
     model::application::interaction::message_component::MessageComponentInteraction,
     utils::MessageBuilder,
 };
+use steamid::{AccountType, Instance, SteamId, Universe};
+
+trait ParseWithDefaults: Sized {
+    fn parse<S: AsRef<str>>(value: S) -> Result<Self>;
+}
+
+impl ParseWithDefaults for SteamId {
+    fn parse<S: AsRef<str>>(value: S) -> Result<Self> {
+        let mut steamid =
+            SteamId::parse_steam2id(value, AccountType::Individual, Instance::Desktop)?;
+        steamid.set_universe(Universe::Public);
+        Ok(steamid)
+    }
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MatchTeam {
+    name: String,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MatchSettings {
+    map: String,
+    password: String,
+    connect_time: i32,
+    match_begin_countdown: i32,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MatchWebhooks {
+    match_end_url: Option<String>,
+    authorization_header: String,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StartMatch {
+    game_server_id: String,
+    team1: MatchTeam,
+    team2: MatchTeam,
+    players: Vec<Player>,
+    settings: MatchSettings,
+    webhooks: MatchWebhooks,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerInfoResponse {
@@ -35,6 +74,23 @@ pub struct Ports {
     pub gotv: i64,
 }
 
+enum Team {
+    Team1,
+    Team2,
+}
+impl Team {
+    fn to_string(&self) -> String {
+        match &self {
+            Team::Team1 => "team1".to_string(),
+            Team::Team2 => "team2".to_string(),
+        }
+    }
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct Player {
+    pub steam_id_64: String,
+    pub team: String,
+}
 #[command(
     slash_command,
     guild_only,
@@ -105,7 +161,10 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     let map_list = context.data().maps.lock().await.clone();
     msg.edit(context, |f| {
         f.content("Map vote phase: vote for 1 or more maps")
-            .components(|c| c.add_action_row(create_map_action_row(map_list.clone())))
+            .components(|c| {
+                c.add_action_row(create_map_action_row(map_list.clone()))
+                    .add_action_row(create_map_vote_action_row())
+            })
     })
     .await?;
 
@@ -119,10 +178,7 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
         let opt = cib.next().await;
         match opt {
             Some(mci) => {
-                let completed = handle_map_pick(&context, &mci).await?;
-                if completed {
-                    break;
-                }
+                handle_map_pick(&context, &mci).await?;
             }
             None => {
                 break;
@@ -420,44 +476,50 @@ async fn handle_draft_type(
 
 fn create_captain_action_row() -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut autdraft_button = CreateButton::default();
-    autdraft_button.custom_id("captain");
-    autdraft_button.label("Become Captain");
-    autdraft_button.style(ButtonStyle::Success);
-    autdraft_button.emoji('🎖');
-    ar.add_button(autdraft_button);
+    let mut captain_button = CreateButton::default();
+    captain_button.custom_id("captain");
+    captain_button.label("Become Captain");
+    captain_button.style(ButtonStyle::Success);
+    captain_button.emoji('🎖');
+    ar.add_button(captain_button);
     ar
 }
 
 pub async fn handle_map_pick(
     context: &Context<'_>,
     mci: &Arc<MessageComponentInteraction>,
-) -> Result<bool> {
+) -> Result<()> {
     let in_queue = user_in_queue(context, Some(mci)).await?;
     if !in_queue {
-        return Ok(false);
-    }
-    let maps_selected = &mci.data.values;
-    let map_votes = {
-        let mut draft = context.data().draft.lock().await;
-        draft
-            .map_votes
-            .insert(mci.user.clone(), maps_selected.clone());
-        draft.map_votes.clone()
-    };
-    let queue_len = context.data().user_queue.lock().await.clone().len();
-
-    mci.create_interaction_response(context, |r| {
-        r.kind(InteractionResponseType::DeferredUpdateMessage)
-            .interaction_response_data(|d| d)
-    })
-    .await?;
-
-    if queue_len == map_votes.len() {
-        return Ok(true);
+        return Ok(());
     }
 
-    Ok(false)
+    if mci.data.custom_id != "vote" {
+        let maps_selected = &mci.data.values;
+        {
+            let mut draft = context.data().draft.lock().await;
+            draft
+                .map_votes
+                .insert(mci.user.clone(), maps_selected.clone());
+            draft.map_votes.clone()
+        };
+    }
+
+    if mci.data.custom_id == "vote" {
+        mci.create_interaction_response(context, |r| {
+            r.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| d.ephemeral(true).content("Map vote submitted"))
+        })
+        .await?;
+    } else {
+        mci.create_interaction_response(context, |r| {
+            r.kind(InteractionResponseType::DeferredUpdateMessage)
+                .interaction_response_data(|d| d)
+        })
+        .await?;
+    }
+
+    Ok(())
 }
 
 pub fn create_map_action_row(map_list: Vec<String>) -> CreateActionRow {
@@ -477,6 +539,15 @@ pub fn create_map_action_row(map_list: Vec<String>) -> CreateActionRow {
     menu.min_values(1);
     menu.max_values(map_len.try_into().unwrap());
     ar.add_select_menu(menu);
+    ar
+}
+pub fn create_map_vote_action_row() -> CreateActionRow {
+    let mut ar = CreateActionRow::default();
+    let mut button = CreateButton::default();
+    button.label("Vote");
+    button.style(ButtonStyle::Success);
+    button.custom_id("vote");
+    ar.add_button(button);
     ar
 }
 pub fn create_user_action_row(user_list: Vec<User>) -> CreateActionRow {
@@ -504,17 +575,18 @@ pub fn create_menu_option(label: &str, value: &str) -> CreateSelectMenuOption {
 
 pub fn create_draft_type_action_row() -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut autdraft_button = CreateButton::default();
-    autdraft_button.custom_id("autodraft");
-    autdraft_button.label("Auto Draft");
-    autdraft_button.style(ButtonStyle::Primary);
-    autdraft_button.emoji('🤖');
+    let mut autodraft_button = CreateButton::default();
+    autodraft_button.custom_id("autodraft");
+    autodraft_button.label("Auto Draft");
+    autodraft_button.style(ButtonStyle::Primary);
+    autodraft_button.disabled(true);
+    autodraft_button.emoji('🤖');
     let mut manual_button = CreateButton::default();
     manual_button.custom_id("manualdraft");
     manual_button.label("Manual Draft");
     manual_button.style(ButtonStyle::Secondary);
     manual_button.emoji('⚙');
-    ar.add_button(autdraft_button);
+    ar.add_button(autodraft_button);
     ar.add_button(manual_button);
     ar
 }
@@ -663,34 +735,18 @@ async fn handle_autodraft(
         .collect();
 
     let config = context.data().config.clone();
-    if config
-        .scrimbot_api_config
-        .as_ref()
-        .unwrap()
-        .scrimbot_api_user
-        == None
-        || config
-            .scrimbot_api_config
-            .as_ref()
-            .unwrap()
-            .scrimbot_api_password
-            == None
+    let Some(scrimbot_api_config) = config.scrimbot_api_config else
     {
         context.send(|m| m.ephemeral(true).content("Sorry, the scrimbot-api user/password has not been configured. This option is unavailable.")).await?;
         return Ok(());
-    }
+    };
 
-    let client = get_api_client(&config.clone().scrimbot_api_config.unwrap());
+    let client = get_api_client(&scrimbot_api_config);
 
     let resp = client
         .get(&format!(
             "{}/stats",
-            &config
-                .scrimbot_api_config
-                .unwrap()
-                .scrimbot_api_url
-                .clone()
-                .unwrap()
+            scrimbot_api_config.scrimbot_api_url.clone()
         ))
         .query(&[("steamids", &steamids), ("option", &"players".to_string())])
         .send()
@@ -826,76 +882,83 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     let msg = context.send(|m| m.content(response)).await?;
     let draft = context.data().draft.lock().await.clone();
     let steam_ids = context.data().steam_id_cache.lock().await.clone();
-    let mut team_a_steam_ids: Vec<String> = draft
+    let team_a_players: Vec<Player> = draft
         .team_a
         .iter()
         .map(|u| steam_ids.get(u.id.as_u64()).unwrap().to_string())
+        .map(|s| u64::from(SteamId::parse(s).unwrap()))
+        .map(|s| Player {
+            steam_id_64: s.to_string(),
+            team: match draft.team_b_start_side == "t" {
+                true => Team::Team1.to_string(),
+                false => Team::Team2.to_string(),
+            },
+        })
         .collect();
-    for team_a_steam_id in &mut team_a_steam_ids {
-        team_a_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_a_steam_id_str: String =
-        team_a_steam_ids.iter().map(|s| format!("{},", s)).collect();
-    team_a_steam_id_str = String::from(&team_a_steam_id_str[..team_a_steam_id_str.len() - 1]);
-    let mut team_b_steam_ids: Vec<String> = draft
+    let team_b_players: Vec<Player> = draft
         .team_b
         .iter()
         .map(|u| steam_ids.get(u.id.as_u64()).unwrap().to_string())
+        .map(|s| u64::from(SteamId::parse(s).unwrap()))
+        .map(|s| Player {
+            steam_id_64: s.to_string(),
+            team: match draft.team_b_start_side == "ct" {
+                true => Team::Team1.to_string(),
+                false => Team::Team2.to_string(),
+            },
+        })
         .collect();
-    for team_b_steam_id in &mut team_b_steam_ids {
-        team_b_steam_id.replace_range(6..7, "1");
-    }
-    let mut team_b_steam_id_str: String =
-        team_b_steam_ids.iter().map(|s| format!("{},", s)).collect();
-    team_b_steam_id_str = String::from(&team_b_steam_id_str[..team_b_steam_id_str.len() - 1]);
-    let team_ct: String;
-    let team_t: String;
-    if draft.team_b_start_side == "ct" {
-        team_ct = team_b_steam_id_str;
-        team_t = team_a_steam_id_str;
-    } else {
-        team_ct = team_a_steam_id_str;
-        team_t = team_b_steam_id_str;
-    }
-
-    println!("Starting server with the following params:");
-    println!("team1_steam_ids:'{}'", &team_t);
-    println!("team2_steam_ids:'{}'", &team_ct);
+    let players: Vec<Player> = team_a_players.into_iter().chain(team_b_players).collect();
 
     let config = &context.data().config;
-    let client = reqwest::Client::new();
     let dathost_username = &config.dathost.username;
     let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server_id = &config.dathost.server_id;
-    let match_end_url = if config.dathost.match_end_url == None {
-        ""
-    } else {
-        config.dathost.match_end_url.as_ref().unwrap()
+    let match_end_url = config.dathost.match_end_url.clone();
+    let authorization_header = match config.scrimbot_api_config.clone() {
+        None => "".to_string(),
+        Some(c) => format!("TOKEN {}", c.scrimbot_api_token),
     };
-    let start_match_url = String::from("https://dathost.net/api/0.1/matches");
-    println!("match_end_webhook_url:'{}'", &match_end_url);
-    println!("game_server_id:'{}'", &server_id);
-    let mut auth_str = String::new();
-    if let Some(scrim_api_config) = config.scrimbot_api_config.clone() {
-        auth_str.push_str(&scrim_api_config.scrimbot_api_user.as_ref().unwrap());
-        auth_str.push(':');
-        auth_str.push_str(&scrim_api_config.scrimbot_api_password.as_ref().unwrap());
-        let base64 = general_purpose::STANDARD.encode(&auth_str);
-        let mut auth_str = String::from("Basic ");
-        auth_str.push_str(&base64);
-        println!("webhook_authorization_header: '{}'", auth_str);
-    }
+
+    let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
+    let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
+    let team_names = context.data().team_names.lock().await.clone();
+    let team_a_name = team_names
+        .get(draft.captain_a.as_ref().unwrap().id.as_u64())
+        .unwrap_or(default_team_a_name);
+    let team_b_name = team_names
+        .get(draft.captain_b.as_ref().unwrap().id.as_u64())
+        .unwrap_or(default_team_b_name);
+    let team1_name = match draft.team_b_start_side == "t" {
+        true => team_a_name.clone(),
+        false => team_b_name.clone(),
+    };
+    let team2_name = match draft.team_b_start_side == "ct" {
+        true => team_a_name.clone(),
+        false => team_b_name.clone(),
+    };
+    let body = &StartMatch {
+        game_server_id: server_id.clone(),
+        team1: MatchTeam { name: team1_name },
+        team2: MatchTeam { name: team2_name },
+        players,
+        settings: MatchSettings {
+            map: draft.selected_map.clone(),
+            connect_time: 60 * 10,
+            match_begin_countdown: 20,
+            password: "".to_string(),
+        },
+        webhooks: MatchWebhooks {
+            match_end_url,
+            authorization_header,
+        },
+    };
+    println!("Starting server with the following params:");
+    println!("{:#?}", &body);
+    let client = Client::new();
     let resp = client
-        .post(&start_match_url)
-        .form(&[
-            ("game_server_id", &server_id),
-            ("team1_steam_ids", &&team_t),
-            ("team2_steam_ids", &&team_ct),
-            ("enable_pause", &&String::from("true")),
-            ("enable_tech_pause", &&String::from("true")),
-            ("webhook_authorization_header", &&auth_str),
-            ("match_end_webhook_url", &&match_end_url.to_string()),
-        ])
+        .post(&"https://dathost.net/api/0.1/cs2-matches".to_string())
+        .json(body)
         .basic_auth(&dathost_username, dathost_password)
         .send()
         .await
@@ -910,6 +973,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
             ))
         })
         .await?;
+        return Ok(());
     }
     let server_info_url = format!(
         "https://dathost.net/api/0.1/game-servers/{}",
@@ -924,39 +988,44 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .unwrap()
         .json::<ServerInfoResponse>()
         .await?;
-    let client = Client::new();
-    let host_name = if server.custom_domain.is_some() {
-        server.custom_domain.unwrap()
-    } else {
-        server.ip
+    let host_name = match server.custom_domain {
+        Some(s) => {
+            if s.is_empty() {
+                server.ip
+            } else {
+                s
+            }
+        }
+        None => server.ip,
     };
     let game_url = format!("{}:{}", host_name, server.ports.game);
     let gotv_url = format!("{}:{}", host_name, server.ports.gotv);
-    let game_link = format!("steam://connect/{}", &game_url);
-    let gotv_link = format!("steam://connect/{}", &gotv_url);
-    let t_url = client
-        .get("https://tinyurl.com/api-create.php")
-        .query(&[("url", &game_link)])
-        .send()
-        .await?
-        .text()
-        .await?;
-    let t_gotv_url = client
-        .get("https://tinyurl.com/api-create.php")
-        .query(&[("url", &gotv_link)])
-        .send()
-        .await?
-        .text()
-        .await?;
-    let team_names = context.data().team_names.lock().await.clone();
+    // this can later be added back once steam links work again
+    // let game_link = format!("steam://connect/{}", &game_url);
+    // let gotv_link = format!("steam://connect/{}", &gotv_url);
+    // let client = Client::new();
+    // let t_url = client
+    //     .get("https://tinyurl.com/api-create.php")
+    //     .query(&[("url", &game_link)])
+    //     .send()
+    //     .await?
+    //     .text()
+    //     .await?;
+    // let t_gotv_url = client
+    //     .get("https://tinyurl.com/api-create.php")
+    //     .query(&[("url", &gotv_link)])
+    //     .send()
+    //     .await?
+    //     .text()
+    //     .await?;
     let eos = MessageBuilder::new()
         .push_line(list_teams(&draft, &team_names))
-        .push_line(format!("Map: `{}`", &draft.selected_map))
+        .push_line(format!("Map: `{}`\n", &draft.selected_map))
+        .push_line(format!("**Connect:** ||`connect {}`||", &game_url))
         .build();
     msg.edit(context.clone(), |m| {
-        m.content(eos).components(|c| {
-            c.add_action_row(create_server_conn_button_row(&t_url, &t_gotv_url, true))
-        })
+        m.content(eos)
+            .components(|c| c.add_action_row(create_server_conn_button_row(true)))
     })
     .await?;
 
@@ -982,66 +1051,9 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
             }
         }
     }
-    let team_names = context.data().team_names.lock().await.clone();
-    let send_command_url = format!(
-        "https://dathost.net/api/0.1/game-servers/{}/console",
-        &config.dathost.server_id
-    );
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let default_team_a_name = &format!("Team {}", &draft.captain_a.as_ref().unwrap().name);
-    let default_team_b_name = &format!("Team {}", &draft.captain_b.as_ref().unwrap().name);
-    let team_a_name = team_names
-        .get(draft.captain_a.as_ref().unwrap().id.as_u64())
-        .unwrap_or(default_team_a_name);
-    let team_b_name = team_names
-        .get(draft.captain_b.as_ref().unwrap().id.as_u64())
-        .unwrap_or(default_team_b_name);
-    let team_one_command;
-    let team_two_command;
-    if draft.team_b_start_side == "ct" {
-        team_one_command = format!("mp_teamname_1 {}", &team_b_name);
-        team_two_command = format!("mp_teamname_2 {}", &team_a_name);
-    } else {
-        team_one_command = format!("mp_teamname_1 {}", &team_a_name);
-        team_two_command = format!("mp_teamname_2 {}", &team_b_name);
-    }
-    if let Err(resp) = client
-        .post(&send_command_url)
-        .form(&[("line", &team_one_command)])
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-    {
-        eprintln!("Error setting team name 1: {:?}", resp);
-    }
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    if let Err(resp) = client
-        .post(&send_command_url)
-        .form(&[("line", &team_two_command)])
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-    {
-        eprintln!("Error setting team name 2: {:?}", resp);
-    }
-    // reset to queue state
-    {
-        let mut user_queue = context.data().user_queue.lock().await;
-        user_queue.clear();
-    }
-    {
-        let mut ready_queue = context.data().user_queue.lock().await;
-        ready_queue.clear();
-    }
-    {
-        let mut state = context.data().state.lock().await;
-        *state = State::Queue;
-    }
-    {
-        let mut queue_msgs = context.data().queue_messages.lock().await;
-        queue_msgs.clear();
-    }
+
     reset_draft(context).await?;
+    clear_queue(context).await?;
 
     let mut cib = msg
         .clone()
@@ -1057,10 +1069,8 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                 mci.create_interaction_response(context, |r| {
                     r.kind(InteractionResponseType::ChannelMessageWithSource)
                         .interaction_response_data(|d| {
-                            d.ephemeral(true).content(format!(
-                                "Console: ||`connect {}`||\nGOTV: ||`connect {}`||",
-                                &game_url, &gotv_url
-                            ))
+                            d.ephemeral(true)
+                                .content(format!("GOTV: ||`connect {}`||", &gotv_url))
                         })
                 })
                 .await?;
@@ -1070,13 +1080,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
                 msg.into_message()
                     .await?
                     .edit(context, |m| {
-                        m.components(|c| {
-                            c.add_action_row(create_server_conn_button_row(
-                                &t_url,
-                                &t_gotv_url,
-                                false,
-                            ))
-                        })
+                        m.components(|c| c.add_action_row(create_server_conn_button_row(false)))
                     })
                     .await?;
                 break;
@@ -1086,31 +1090,15 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn create_server_conn_button_row(
-    url: &String,
-    gotv_url: &String,
-    show_cmds: bool,
-) -> CreateActionRow {
+pub fn create_server_conn_button_row(show_cmds: bool) -> CreateActionRow {
     let mut ar = CreateActionRow::default();
-    let mut conn_button = CreateButton::default();
-    conn_button.label("Connect");
-    conn_button.style(ButtonStyle::Link);
-    conn_button.emoji(ReactionType::Unicode("▶".parse().unwrap()));
-    conn_button.url(&url);
-    ar.add_button(conn_button);
     if show_cmds {
         let mut console_button = CreateButton::default();
         console_button.custom_id("console");
-        console_button.label("Console Cmds");
+        console_button.label("GOTV");
         console_button.style(ButtonStyle::Secondary);
-        console_button.emoji(ReactionType::Unicode("🧾".parse().unwrap()));
+        console_button.emoji(ReactionType::Unicode("📺".parse().unwrap()));
         ar.add_button(console_button);
     }
-    let mut gotv_button = CreateButton::default();
-    gotv_button.label("GOTV");
-    gotv_button.style(ButtonStyle::Link);
-    gotv_button.emoji(ReactionType::Unicode("📺".parse().unwrap()));
-    gotv_button.url(gotv_url);
-    ar.add_button(gotv_button);
     ar
 }
