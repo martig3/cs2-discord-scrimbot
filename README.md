@@ -8,7 +8,7 @@ Discord bot for managing, automating & organizing 10 man scrims in CSGO
 - Map Vote
 - Captain pick & player draft
 - Starting side pick
-- Automatically starts CSGO server & prints out connection info
+- Automatically starts CS2 server & prints out connection info
 - Custom team names
 - Autoclear queue
 - Auto assign discord role to user on queue join
@@ -27,13 +27,11 @@ Run your platform executable with the following `config/config.yaml` file:
 ```yaml
 autoclear_hour: <0-24> -- optional
 post_setup_msg: GLHF! -- optional
-server:
-  id: <your dathost server id>
-  url: <your dathost server url>
 dathost:
-  username: <your dathost username/email>
-  password: <your dathost password>
-  match_end_url: <your match end url>
+  username: wienc.martin@gmail.com
+  password: Theemprah1122!
+  server_id: dathost server id
+  match_end_url: match-end webhook url
 discord:
   token: <discord bot token>
   admin_role_id: <a discord role id for admins>
@@ -41,9 +39,8 @@ discord:
   team_a_channel_id: <a discord text channel id>  -- optional
   team_b_channel_id: <a discord text channel id>  -- optional
   assign_role_id: <a dicord role id to assign for user on queue join> -- optional
-scrimbot_api_config: -- optional, experimental section
+scrimbot_api_config:
   scrimbot_api_url: <scrimbot-api url>
-  scrimbot_api_user: <scrimbot-api username>
-  scrimbot_api_password: <scrimbot-api password>
+  scrimbot_api_token: <scrimbot-api auth token>
 ```
 **Note:** Make sure to only allow the bot to listen/read messages in one channel only via the discord server settings -> integrations options.
