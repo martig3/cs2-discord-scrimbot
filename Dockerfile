@@ -1,18 +1,18 @@
-FROM rust:1.69 as build
+FROM rust:1.73 as build
 
 # create a new empty shell project
-RUN cargo new --bin csgo-discord-scrimbot
-WORKDIR /csgo-discord-scrimbot
+RUN cargo new --bin cs2-discord-scrimbot
+WORKDIR /cs2-discord-scrimbot
 
 COPY . .
 
 RUN cargo build --release
 
 # our final base
-FROM rust:1.69-slim-buster
+FROM rust:1.73-slim-buster
 
 # copy the build artifact from the build stage
-COPY --from=build /csgo-discord-scrimbot/target/release/csgo-discord-scrimbot .
+COPY --from=build /cs2-discord-scrimbot/target/release/cs2-discord-scrimbot .
 
 # set the startup command to run your binary
-CMD ["./csgo-discord-scrimbot"]
+CMD ["./cs2-discord-scrimbot"]
