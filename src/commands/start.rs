@@ -501,7 +501,6 @@ pub async fn handle_map_pick(
             draft
                 .map_votes
                 .insert(mci.user.clone(), maps_selected.clone());
-            draft.map_votes.clone()
         };
     }
 
