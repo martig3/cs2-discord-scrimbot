@@ -16,6 +16,7 @@ use serenity::model::user::User;
 use std::collections::HashMap;
 
 mod commands;
+mod dathost;
 mod utils;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -211,7 +212,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn read_config() -> Result<Config, serde_yaml::Error> {
+pub async fn read_config() -> Result<Config, serde_yaml::Error> {
     let yaml = std::fs::read_to_string("config/config.yaml").unwrap();
     let config: Config = serde_yaml::from_str(&yaml)?;
     Ok(config)

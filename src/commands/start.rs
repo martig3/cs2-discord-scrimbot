@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use crate::dathost::DathostClient;
 use crate::utils::clear_queue;
 use crate::{
     utils::{get_api_client, list_teams, reset_draft, user_in_queue, Stats},
@@ -11,7 +12,6 @@ use poise::{
     serenity_prelude::{ButtonStyle, InteractionResponseType, ReactionType, User},
 };
 use rand::Rng;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::{
     builder::{CreateActionRow, CreateButton, CreateSelectMenu, CreateSelectMenuOption},
@@ -59,7 +59,7 @@ pub struct StartMatch {
     webhooks: MatchWebhooks,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ServerInfoResponse {
     pub game: Option<String>,
     pub id: String,
@@ -68,7 +68,7 @@ pub struct ServerInfoResponse {
     pub location: Option<String>,
     pub custom_domain: Option<String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Ports {
     pub game: i64,
     pub gotv: i64,
@@ -910,8 +910,6 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
     let players: Vec<Player> = team_a_players.into_iter().chain(team_b_players).collect();
 
     let config = &context.data().config;
-    let dathost_username = &config.dathost.username;
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
     let server_id = &config.dathost.server_id;
     let match_end_url = config.dathost.match_end_url.clone();
     let authorization_header = match config.scrimbot_api_config.clone() {
@@ -953,15 +951,12 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         },
     };
     println!("Starting server with the following params:");
-    println!("{:#?}", &body);
-    let client = Client::new();
-    let resp = client
-        .post(&"https://dathost.net/api/0.1/cs2-matches".to_string())
-        .json(body)
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string(&body).unwrap_or("cannot deserialize body".to_string())
+    );
+    let client = DathostClient::new(&config).await?;
+    let resp = client.start_match(body).await?;
     println!("Start match response code - {}", &resp.status());
 
     if !resp.status().is_success() {
@@ -974,19 +969,7 @@ async fn start_server(context: &Context<'_>) -> Result<()> {
         .await?;
         return Ok(());
     }
-    let server_info_url = format!(
-        "https://dathost.net/api/0.1/game-servers/{}",
-        config.dathost.server_id
-    );
-    let dathost_password: Option<String> = Some(String::from(&config.dathost.password));
-    let server = client
-        .get(&server_info_url)
-        .basic_auth(&dathost_username, dathost_password)
-        .send()
-        .await
-        .unwrap()
-        .json::<ServerInfoResponse>()
-        .await?;
+    let server = client.get_server(&config.dathost.server_id).await?;
     let host_name = match server.custom_domain {
         Some(s) => {
             if s.is_empty() {

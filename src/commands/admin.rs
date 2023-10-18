@@ -1,3 +1,4 @@
+use crate::dathost::DathostClient;
 use crate::utils::clear_queue;
 use crate::{
     utils::{reset_draft, write_to_file},
@@ -19,7 +20,7 @@ use serenity::utils::MessageBuilder;
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("map", "queue", "setup", "autoclear")
+    subcommands("map", "queue", "setup", "autoclear", "server")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
@@ -30,6 +31,24 @@ pub(crate) async fn setup(_context: Context<'_>) -> Result<()> {
     Ok(())
 }
 
+#[command(slash_command, guild_only, ephemeral, subcommands("info"))]
+pub(crate) async fn server(_context: Context<'_>) -> Result<()> {
+    Ok(())
+}
+
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    description_localized("en-US", "Show server info")
+)]
+pub(crate) async fn info(context: Context<'_>) -> Result<()> {
+    let config = &context.data().config;
+    let dathost_client = DathostClient::new(config).await?;
+    let server = dathost_client.get_server(&config.dathost.server_id).await?;
+    context.say(format!("{:#?}", server).to_string()).await?;
+    Ok(())
+}
 #[command(
     slash_command,
     guild_only,
