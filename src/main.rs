@@ -1,4 +1,5 @@
 use crate::commands::admin::admin;
+use crate::commands::maps::maps;
 use crate::commands::queue::queue;
 use anyhow::Error;
 use anyhow::Result;
@@ -136,7 +137,15 @@ async fn main() -> Result<()> {
 
     let framework = Framework::<_, Error>::builder()
         .options(FrameworkOptions {
-            commands: vec![queue(), admin(), steam_id(), teamname(), start(), stats()],
+            commands: vec![
+                queue(),
+                admin(),
+                steam_id(),
+                teamname(),
+                start(),
+                stats(),
+                maps(),
+            ],
             event_handler: move |context, event, framework, _data| {
                 Box::pin(async move {
                     if let Event::Ready { data_about_bot } = event {
