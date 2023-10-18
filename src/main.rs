@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::builder()
         .filter_level(log::LevelFilter::Warn)
-        .filter_module("csgo-discord-scrimbot", log::LevelFilter::Info)
+        .filter_module("cs2-discord-scrimbot", log::LevelFilter::Info)
         .parse_default_env()
         .init();
 
