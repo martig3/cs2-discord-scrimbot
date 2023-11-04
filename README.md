@@ -1,6 +1,6 @@
 # cs2-discord-scrimbot
 
-Discord bot for managing, automating & organizing 10 man scrims in CSGO
+Discord bot for managing, automating & organizing 10 man scrims in Counter-Strike 2
 
 ## Features
 
