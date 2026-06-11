@@ -55,11 +55,6 @@ pub struct DiscordConfig {
     assign_role_id: Option<u64>,
 }
 
-#[derive(PartialEq)]
-struct StateContainer {
-    state: State,
-}
-
 #[derive(Clone)]
 pub struct Draft {
     captain_a: Option<User>,
@@ -121,6 +116,7 @@ pub struct Data {
     pub state: Mutex<State>,
     pub maps: Mutex<Vec<String>>,
     pub draft: Mutex<Draft>,
+    pub team_size: Mutex<u8>,
 }
 
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -200,6 +196,7 @@ async fn main() -> Result<()> {
                     team_names: Mutex::new(read_teamnames().await?),
                     ready_queue: Mutex::new(Vec::new()),
                     user_queue: Mutex::new(read_queue().await?),
+                    team_size: Mutex::new(5),
                 })
             })
         });
