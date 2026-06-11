@@ -1,6 +1,6 @@
 [package]
 name = "cs2-discord-scrimbot"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["MartinWienc <32913968+MartinWienc@users.noreply.github.com>"]
 edition = "2021"
 

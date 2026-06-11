@@ -34,10 +34,13 @@ pub(crate) async fn join(
         return Ok(());
     }
 
+    let team_size = context.data().team_size.lock().await.clone();
+    let queue_max_size = team_size * 2;
+
     let validation: Option<&str> = {
         let user_queue = context.data().user_queue.lock().await;
         match user_queue {
-            _ if user_queue.len() >= 10 => Some("Sorry, the queue is full"),
+            _ if user_queue.len() >= queue_max_size.into() => Some("Sorry, the queue is full"),
             _ if user_queue.contains(context.author()) => Some("You are already in the queue"),
             _ => None,
         }
@@ -63,7 +66,7 @@ pub(crate) async fn join(
         .mention(context.author())
         .push(" has been added to the queue. Queue size: ")
         .push(user_queue.len().to_string())
-        .push("/10")
+        .push(format!("/{}", queue_max_size))
         .build();
     context.say(response).await?;
     let queue_messages = {
@@ -146,11 +149,12 @@ pub(crate) async fn leave(context: Context<'_>) -> Result<()> {
         serde_json::to_string(&user_queue).unwrap(),
     )
     .await;
+    let max_queue_size = context.data().team_size.lock().await.clone() * 2;
     let response = MessageBuilder::new()
         .mention(context.author())
         .push(" has left the queue. Queue size: ")
         .push(user_queue.len().to_string())
-        .push("/10")
+        .push(format!("/{}", max_queue_size))
         .build();
     context.say(response).await?;
     let queued_msgs = {
@@ -183,10 +187,11 @@ pub(crate) async fn list(context: Context<'_>) -> Result<()> {
             user_name.push_str(format!(": `{}`", value).as_str());
         }
     }
+    let max_queue_size = context.data().team_size.lock().await.clone() * 2;
     let response = MessageBuilder::new()
         .push("Current queue size: ")
         .push(&user_queue.len())
-        .push("/10")
+        .push(format!("/{}", max_queue_size))
         .push(user_name)
         .build();
     context.say(response).await?;

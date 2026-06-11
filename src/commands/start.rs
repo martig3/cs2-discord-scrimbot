@@ -103,7 +103,9 @@ pub(crate) async fn start(context: Context<'_>) -> Result<()> {
     }
 
     let queue = context.data().user_queue.lock().await.clone();
-    if queue.len() < 10 {
+    let team_size = context.data().team_size.lock().await.clone();
+    let max_queue_size = (team_size * 2).into();
+    if queue.len() < max_queue_size {
         context
             .send(|m| m.ephemeral(true).content("The queue is not full yet"))
             .await?;
@@ -734,8 +736,7 @@ async fn handle_autodraft(
         .collect();
 
     let config = context.data().config.clone();
-    let Some(scrimbot_api_config) = config.scrimbot_api_config else
-    {
+    let Some(scrimbot_api_config) = config.scrimbot_api_config else {
         context.send(|m| m.ephemeral(true).content("Sorry, the scrimbot-api user/password has not been configured. This option is unavailable.")).await?;
         return Ok(());
     };

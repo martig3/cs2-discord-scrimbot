@@ -20,7 +20,7 @@ use serenity::utils::MessageBuilder;
     guild_only,
     ephemeral,
     default_member_permissions = "MODERATE_MEMBERS",
-    subcommands("map", "queue", "setup", "autoclear", "server")
+    subcommands("map", "queue", "setup", "autoclear", "server", "team_size")
 )]
 pub(crate) async fn admin(_context: Context<'_>) -> Result<()> {
     Ok(())
@@ -235,4 +235,38 @@ pub(crate) async fn autoclear(context: Context<'_>) -> Result<()> {
         .await;
         clear_queue(&context).await?;
     }
+}
+
+#[command(
+    slash_command,
+    guild_only,
+    ephemeral,
+    rename = "teamsize",
+    description_localized("en-US", "Set the max team size")
+)]
+pub(crate) async fn team_size(
+    context: Context<'_>,
+    #[description = "Team size (1-5)"]
+    #[min = 1]
+    #[max = 5]
+    team_size: u8,
+) -> Result<()> {
+    if team_size < 1 || team_size > 5 {
+        let response = MessageBuilder::new()
+            .push("Team size must be between 1 and 5")
+            .build();
+        context.say(response).await?;
+        return Ok(());
+    }
+    {
+        let mut team_size_lock = context.data().team_size.lock().await;
+        *team_size_lock = team_size;
+    }
+    let response = MessageBuilder::new()
+        .push("Team size set to `")
+        .push(&team_size)
+        .push("`")
+        .build();
+    context.say(response).await?;
+    Ok(())
 }
